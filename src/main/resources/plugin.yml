@@ -1,0 +1,15 @@
+name: MinehuntF
+version: '2.2'
+main: xyz.fortern.minehunt.Minehunt
+api-version: '1.20'
+authors: [ Fortern ]
+
+libraries:
+  - org.jetbrains.kotlin:kotlin-stdlib:2.3.0
+  - net.kyori:adventure-api:4.26.1
+  - net.kyori:adventure-platform-bukkit:4.4.1
+
+commands:
+  minehunt:
+    description: "游戏主命令"
+    aliases: [mh]
