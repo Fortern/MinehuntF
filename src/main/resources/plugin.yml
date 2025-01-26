@@ -1,0 +1,9 @@
+name: Minehunt
+version: '1.0-SNAPSHOT'
+main: xyz.fortern.minehunt.Minehunt
+api-version: '1.21'
+authors: [ Fortern ]
+
+commands:
+  god:
+    description: "使自己无敌"
