@@ -20,8 +20,13 @@ class PlayerListener(
         val stage = console.stage
         if (stage == Console.GameStage.PREPARING) {
             player.gameMode = GameMode.ADVENTURE
+            console.spectatorSet.add(player)
+            // 在开始倒计时阶段，所有玩家都是无敌状态
+            if (console.countdownTask != null) {
+                player.isInvulnerable = true
+            }
         } else if (stage == Console.GameStage.PROCESSING && console.speedrunnerTeam.hasEntry(player.name)) {
-            console.speedrunnerList.add(player.name)
+            console.speedrunnerList.add(player)
         }
     }
     
@@ -32,7 +37,7 @@ class PlayerListener(
         if (stage == Console.GameStage.PREPARING) {
             player.scoreboard.teams.forEach { it.removeEntry(player.name) }
         } else if (stage == Console.GameStage.PROCESSING && console.speedrunnerTeam.hasEntry(player.name)) {
-            console.speedrunnerList.remove(player.name)
+            console.speedrunnerList.remove(player)
         }
         player.spigot().respawn()
         
