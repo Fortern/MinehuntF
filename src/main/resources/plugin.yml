@@ -7,3 +7,5 @@ authors: [ Fortern ]
 commands:
   god:
     description: "使自己无敌"
+  test:
+    description: "测试"

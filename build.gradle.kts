@@ -19,7 +19,7 @@ repositories {
 dependencies {
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.3-R0.1-SNAPSHOT")
-    // Adventure API
+    // https://mvnrepository.com/artifact/net.kyori/adventure-api
     compileOnly("net.kyori:adventure-api:4.18.0")
     // Kotlin Stdlib https://mvnrepository.com/artifact/org.jetbrains.kotlin/kotlin-stdlib
     implementation(kotlin("stdlib"))

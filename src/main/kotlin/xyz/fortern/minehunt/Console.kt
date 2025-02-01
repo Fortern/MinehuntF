@@ -28,35 +28,50 @@ class Console {
     /**
      * 猎人队伍
      */
-    private val hunterTeam: Team
+    val hunterTeam: Team
     
     /**
      * 观察者队伍
      */
-    private val spectatorTeam: Team
+    val spectatorTeam: Team
+    
+    // 玩家退出游戏后会自动离开Team，所以我们维护自己的玩家集合
     
     /**
-     * 用于遍历的速通者列表
+     * 速通者列表
      */
-    val speedrunnerList: MutableList<Player> = ArrayList()
+    val speedrunnerSet: MutableSet<Player> = HashSet()
     
     /**
-     * 插件维护的猎人玩家集合
+     * 猎人玩家集合
      */
     val hunterSet: MutableSet<Player> = HashSet()
     
     /**
-     * 插件维护的旁观者玩家集合
+     * 旁观者玩家集合
      */
     val spectatorSet: MutableSet<Player> = HashSet()
+    
+    /**
+     * 存活中的速通者列表，用于指南针指向的遍历
+     */
+    val speedrunnerList: MutableList<Player> = ArrayList()
     
     /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
     val trackRunnerMap: Map<String, Int> = HashMap()
     
-    var countdownTask: BukkitTask? = null
+    /**
+     * 游戏开始前的倒计时任务
+     */
+    var beginningCountdown: BukkitTask? = null
         private set
+    
+    /**
+     * 猎人出生倒计时
+     */
+    var hunterSpawnCD: BukkitTask? = null
     
     companion object {
         @JvmStatic
@@ -68,7 +83,7 @@ class Console {
     
     init {
         instance = this
-        // 设置游戏规则
+        // 初始化游戏规则
         val world = Bukkit.getWorld("world")!!
         world.worldBorder.size = 32.0
         world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
@@ -79,7 +94,7 @@ class Console {
         world.setGameRule(GameRule.SPECTATORS_GENERATE_CHUNKS, false)
         world.difficulty = Difficulty.HARD
         
-        // 配置队伍
+        // 初始化队伍
         val scoreboard = Bukkit.getScoreboardManager().mainScoreboard
         
         speedrunnerTeam = scoreboard.getTeam("speedrunner") ?: scoreboard.registerNewTeam("speedrunner")
@@ -91,16 +106,23 @@ class Console {
         spectatorTeam.entries.forEach { spectatorTeam.removeEntries(it) }
     }
     
-    fun tryStart(): Boolean {
-        if (speedrunnerTeam.size == 0) return false
-        if (Bukkit.getOnlinePlayers().count { it.isDead } > 0) return false
+    /**
+     * 尝试开始游戏。如果满足条件，则返回空字符串，否则返回原因描述
+     */
+    fun tryStart(): String {
+        if (speedrunnerTeam.size == 0) return "速通者需要至少一位玩家"
+        
+        // 以后可能有其他需要判断的情况
+        
         countdownToStart()
-        return true
+        return ""
     }
     
+    /**
+     * 游戏开始前的倒计时
+     */
     fun countdownToStart() {
-        // 进行开始前的倒计时
-        countdownTask = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), object : Runnable {
+        beginningCountdown = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), object : Runnable {
             private var countdown = 6
             override fun run() {
                 if (--countdown > 0) {
@@ -114,7 +136,8 @@ class Console {
                     }
                 } else {
                     // 倒计时结束后开始游戏
-                    countdownTask = null
+                    beginningCountdown!!.cancel()
+                    beginningCountdown = null
                     start()
                 }
             }
@@ -123,6 +146,8 @@ class Console {
     
     /**
      * 开始游戏
+     *
+     * 游戏阶段由 PREPARING 变为 PROCESSING
      */
     fun start() {
         // 修改游戏规则
@@ -150,18 +175,21 @@ class Console {
         // 通过Team遍历玩家很麻烦
         
         // 速通者更改为生存模式
-        speedrunnerList.forEach { it.gameMode = GameMode.SURVIVAL }
+        speedrunnerSet.forEach { it.gameMode = GameMode.SURVIVAL }
         // 将猎人传送到世界底部
         hunterSet.forEach { it.teleport(Location(world, 0.0, -64.0, 0.0)) }
         
-        val scheduler = Bukkit.getScheduler()
-        val task = scheduler.runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
+        // 猎人出生倒计时Task
+        hunterSpawnCD = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
             hunterSet.forEach {
                 it.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
                 it.gameMode = GameMode.SURVIVAL
                 it.teleport(spawnLocation)
+                // TODO 给予猎人指南针
+                
             }
-        }, 0, RuleItem.HUNTER_READY_CD.value * 20L)
+            speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
+        }, RuleItem.HUNTER_READY_CD.value * 20L, 0)
         
         
     }
