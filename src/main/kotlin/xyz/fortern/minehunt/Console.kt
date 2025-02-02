@@ -8,7 +8,10 @@ import org.bukkit.Difficulty
 import org.bukkit.GameMode
 import org.bukkit.GameRule
 import org.bukkit.Location
+import org.bukkit.Material
+import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.RuleItem
@@ -60,7 +63,30 @@ class Console {
     /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
-    val trackRunnerMap: Map<String, Int> = HashMap()
+    val trackRunnerMap: MutableMap<String, Int> = HashMap()
+    
+    /**
+     * 猎人的指南针标记
+     */
+    private val compassFlag = "Hunter Compass"
+    
+    /**
+     * 猎人指南针物品
+     */
+    private val hunterCompass: ItemStack = ItemStack(Material.COMPASS).apply {
+        // 设置名称
+        itemMeta.displayName(Component.text("猎人指南针", NamedTextColor.GOLD))
+        // 设置Lore
+        itemMeta.lore(
+            listOf(
+                // 第一个Lore用于标记这个指南针
+                Component.text("compassFlag", NamedTextColor.GRAY),
+                Component.text("右键使用或扔出以切换目标", NamedTextColor.GRAY)
+            )
+        )
+        // 添加附魔：消失诅咒
+        itemMeta.addEnchant(Enchantment.VANISHING_CURSE, 1, false)
+    }
     
     /**
      * 游戏开始前的倒计时任务
@@ -72,6 +98,12 @@ class Console {
      * 猎人出生倒计时
      */
     var hunterSpawnCD: BukkitTask? = null
+        private set
+    
+    /**
+     * 指南针刷新任务
+     */
+    private var compassRefreshTask: BukkitTask? = null
     
     companion object {
         @JvmStatic
@@ -122,6 +154,7 @@ class Console {
      * 游戏开始前的倒计时
      */
     fun countdownToStart() {
+        // TODO 如何阻止玩家玩家移动？设置速度为0或取消move事件
         beginningCountdown = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), object : Runnable {
             private var countdown = 6
             override fun run() {
@@ -172,12 +205,22 @@ class Console {
             it.teleport(spawnLocation)
         }
         
-        // 通过Team遍历玩家很麻烦
+        // 速通者更改为生存模式，并加入speedrunnerList
+        speedrunnerSet.forEach {
+            it.gameMode = GameMode.SURVIVAL
+            speedrunnerList.add(it)
+        }
         
-        // 速通者更改为生存模式
-        speedrunnerSet.forEach { it.gameMode = GameMode.SURVIVAL }
-        // 将猎人传送到世界底部
-        hunterSet.forEach { it.teleport(Location(world, 0.0, -64.0, 0.0)) }
+        // 将猎人传送到世界底部，且指南针开始有所指向
+        hunterSet.forEach {
+            it.teleport(Location(world, 0.0, -64.0, 0.0))
+            trackRunnerMap.put(it.name, 0)
+        }
+        
+        Runnable {
+            compassMeta.setLodestoneTracked(false)
+            compassMeta.setLodestone(event.getFindLoc())
+        }
         
         // 猎人出生倒计时Task
         hunterSpawnCD = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
@@ -185,12 +228,12 @@ class Console {
                 it.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
                 it.gameMode = GameMode.SURVIVAL
                 it.teleport(spawnLocation)
-                // TODO 给予猎人指南针
-                
+                it.inventory.addItem(hunterCompass)
             }
             speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
         }, RuleItem.HUNTER_READY_CD.value * 20L, 0)
         
+        // TODO 如何不再阻止玩家移动？
         
     }
     
