@@ -3,6 +3,7 @@ package xyz.fortern.minehunt.listener
 import org.bukkit.GameMode
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import xyz.fortern.minehunt.Console
@@ -45,9 +46,19 @@ class PlayerListener(
     fun onPlayerQuit(event: PlayerQuitEvent) {
         val player = event.player
         // 速通者退出时，从speedrunnerList中移除，避免指南针遍历
-        if (console.stage == GameStage.PROCESSING && console.speedrunnerSet.contains(player))
-            console.speedrunnerList.remove(player)
+//        if (console.stage == GameStage.PROCESSING && console.speedrunnerSet.contains(player))
+//            console.speedrunnerList.remove(player)
         
+    }
+    
+    @EventHandler
+    fun onDropItem(event: PlayerDropItemEvent) {
+        val itemStack = event.itemDrop.itemStack
+        if (!console.isHunterCompass(itemStack)) {
+            return
+        }
+        val player = event.player
+        console.trackRunnerMap[player.name] = 0
     }
     
     

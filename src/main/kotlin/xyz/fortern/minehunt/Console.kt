@@ -15,6 +15,7 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.RuleItem
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 游戏控制台
@@ -56,14 +57,14 @@ class Console {
     val spectatorSet: MutableSet<Player> = HashSet()
     
     /**
-     * 存活中的速通者列表，用于指南针指向的遍历
+     * 速通者列表，用于指南针指向的遍历
      */
-    val speedrunnerList: MutableList<Player> = ArrayList()
+    lateinit var speedrunnerList: List<Player>
     
     /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
-    val trackRunnerMap: MutableMap<String, Int> = HashMap()
+    val trackRunnerMap: MutableMap<String, Int> = ConcurrentHashMap()
     
     /**
      * 猎人的指南针标记
@@ -72,10 +73,14 @@ class Console {
     
     /**
      * 猎人指南针物品
+     *
+     * 出生与复活是唯一获取此物品的方法
      */
     private val hunterCompass: ItemStack = ItemStack(Material.COMPASS).apply {
+        // 最大堆叠数设为1
+        itemMeta.setMaxStackSize(1)
         // 设置名称
-        itemMeta.displayName(Component.text("猎人指南针", NamedTextColor.GOLD))
+        itemMeta.displayName(Component.text(compassFlag, NamedTextColor.GOLD))
         // 设置Lore
         itemMeta.lore(
             listOf(
@@ -183,6 +188,8 @@ class Console {
      * 游戏阶段由 PREPARING 变为 PROCESSING
      */
     fun start() {
+        if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
+        
         // 修改游戏规则
         val world = Bukkit.getWorld("world")!!
         world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, true)
@@ -206,20 +213,13 @@ class Console {
         }
         
         // 速通者更改为生存模式，并加入speedrunnerList
-        speedrunnerSet.forEach {
-            it.gameMode = GameMode.SURVIVAL
-            speedrunnerList.add(it)
-        }
+        speedrunnerSet.forEach { it.gameMode = GameMode.SURVIVAL }
+        speedrunnerList = speedrunnerSet.toList()
         
         // 将猎人传送到世界底部，且指南针开始有所指向
         hunterSet.forEach {
             it.teleport(Location(world, 0.0, -64.0, 0.0))
             trackRunnerMap.put(it.name, 0)
-        }
-        
-        Runnable {
-            compassMeta.setLodestoneTracked(false)
-            compassMeta.setLodestone(event.getFindLoc())
         }
         
         // 猎人出生倒计时Task
@@ -231,12 +231,46 @@ class Console {
                 it.inventory.addItem(hunterCompass)
             }
             speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
+            // 指南针开始追踪
+            compassRefreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
+                // TODO 如何取得玩家身上的指南针？
+                hunterSet.forEach {
+                    if (it.isOnline) {
+                        var i = (trackRunnerMap[it.name] ?: return@forEach) % speedrunnerList.size
+                        val speedrunner = speedrunnerList[i]
+                        val location = speedrunner.location
+                        val items = it.inventory.all(hunterCompass)
+                        items.forEach { k, v ->
+                            val lore = v.lore()
+                            if (lore != null && lore.isNotEmpty() && lore[0].equals(compassFlag)) {
+                            
+                            }
+                        }
+                        
+                    }
+                }
+                
+            }, 0, 20)
+            
         }, RuleItem.HUNTER_READY_CD.value * 20L, 0)
         
         // TODO 如何不再阻止玩家移动？
         
     }
     
+    /**
+     * 判断物品是否为猎人指南针
+     */
+    fun isHunterCompass(itemStack: ItemStack) = hunterCompass == itemStack
+    
+    /**
+     * 让该玩家所追踪的目标切换倒下一个
+     */
+    fun trackNextPlayer(playerName: String) {
+        var i = trackRunnerMap[playerName] ?: return
+        i++
+        trackRunnerMap[playerName] = i % speedrunnerList.size
+    }
     
     /**
      * 游戏阶段
