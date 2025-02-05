@@ -12,6 +12,8 @@ import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.meta.CompassMeta
+import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.RuleItem
@@ -44,27 +46,27 @@ class Console {
     /**
      * 速通者列表
      */
-    val speedrunnerSet: MutableSet<Player> = HashSet()
+    private val speedrunnerSet: MutableSet<Player> = HashSet()
     
     /**
      * 猎人玩家集合
      */
-    val hunterSet: MutableSet<Player> = HashSet()
+    private val hunterSet: MutableSet<Player> = HashSet()
     
     /**
      * 旁观者玩家集合
      */
-    val spectatorSet: MutableSet<Player> = HashSet()
+    private val spectatorSet: MutableSet<Player> = HashSet()
     
     /**
      * 速通者列表，用于指南针指向的遍历
      */
-    lateinit var speedrunnerList: List<Player>
+    private lateinit var speedrunnerList: List<Player>
     
     /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
-    val trackRunnerMap: MutableMap<String, Int> = ConcurrentHashMap()
+    private val trackRunnerMap: MutableMap<String, Int> = ConcurrentHashMap()
     
     /**
      * 猎人的指南针标记
@@ -144,6 +146,48 @@ class Console {
     }
     
     /**
+     * 判断玩家是否为猎人
+     */
+    fun isHunter(player: Player) = hunterSet.contains(player)
+    
+    /**
+     * 判断是否为观察者
+     */
+    fun isSpectator(player: Player) = spectatorSet.contains(player)
+    
+    /**
+     * 判断是否为速通者
+     */
+    fun isSpeedrunner(player: Player) = speedrunnerSet.contains(player)
+    
+    /**
+     * 加入猎人阵营
+     */
+    fun joinHunter(player: Player) {
+        speedrunnerSet.remove(player)
+        spectatorSet.remove(player)
+        hunterSet.add(player)
+    }
+    
+    /**
+     * 加入速通者阵营
+     */
+    fun joinSpeedrunner(player: Player) {
+        hunterSet.remove(player)
+        spectatorSet.remove(player)
+        speedrunnerSet.add(player)
+    }
+    
+    /**
+     * 加入观察者阵营
+     */
+    fun joinSpectator(player: Player) {
+        hunterSet.remove(player)
+        speedrunnerSet.remove(player)
+        spectatorSet.add(player)
+    }
+    
+    /**
      * 尝试开始游戏。如果满足条件，则返回空字符串，否则返回原因描述
      */
     fun tryStart(): String {
@@ -159,7 +203,6 @@ class Console {
      * 游戏开始前的倒计时
      */
     fun countdownToStart() {
-        // TODO 如何阻止玩家玩家移动？设置速度为0或取消move事件
         beginningCountdown = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), object : Runnable {
             private var countdown = 6
             override fun run() {
@@ -222,39 +265,49 @@ class Console {
             trackRunnerMap.put(it.name, 0)
         }
         
+        // 创建指南针更新任务
+        val compassTask = object : BukkitRunnable() {
+            override fun run() {
+                hunterSet.forEach {
+                    if (!it.isOnline) return@forEach
+                    var i = (trackRunnerMap[it.name] ?: return@forEach) % speedrunnerList.size
+                    val speedrunner = speedrunnerList[i]
+                    val items = it.inventory.all(hunterCompass)
+                    var flag = false
+                    items.forEach { k, v ->
+                        val lore = v.lore()
+                        // 避免玩家身上有多个猎人指南针
+                        if (flag) {
+                            it.inventory.clear(k)
+                        }
+                        if (lore != null && lore.isNotEmpty() && lore[0].equals(compassFlag)) {
+                            flag = true
+                            // 让指南针指向某一个猎人
+                            val meta = v.itemMeta as CompassMeta
+                            meta.isLodestoneTracked = false
+                            meta.lodestone = speedrunner.location
+                        }
+                    }
+                }
+            }
+        }
+        
         // 猎人出生倒计时Task
-        hunterSpawnCD = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
+        hunterSpawnCD = Bukkit.getScheduler().runTaskTimer(Minehunt.instance(), Runnable {
+            // 猎人设置初始状态
             hunterSet.forEach {
                 it.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
                 it.gameMode = GameMode.SURVIVAL
                 it.teleport(spawnLocation)
                 it.inventory.addItem(hunterCompass)
             }
-            speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
-            // 指南针开始追踪
-            compassRefreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), Runnable {
-                // TODO 如何取得玩家身上的指南针？
-                hunterSet.forEach {
-                    if (it.isOnline) {
-                        var i = (trackRunnerMap[it.name] ?: return@forEach) % speedrunnerList.size
-                        val speedrunner = speedrunnerList[i]
-                        val location = speedrunner.location
-                        val items = it.inventory.all(hunterCompass)
-                        items.forEach { k, v ->
-                            val lore = v.lore()
-                            if (lore != null && lore.isNotEmpty() && lore[0].equals(compassFlag)) {
-                            
-                            }
-                        }
-                        
-                    }
-                }
-                
-            }, 0, 20)
             
+            // 自动更新指南针任务开始运行
+            compassRefreshTask = compassTask.runTaskTimer(Minehunt.instance(), 0, 20)
+            
+            // 通知速通者
+            speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
         }, RuleItem.HUNTER_READY_CD.value * 20L, 0)
-        
-        // TODO 如何不再阻止玩家移动？
         
     }
     
@@ -264,11 +317,19 @@ class Console {
     fun isHunterCompass(itemStack: ItemStack) = hunterCompass == itemStack
     
     /**
-     * 让该玩家所追踪的目标切换倒下一个
+     * 让该玩家所追踪的目标切换到下一个
      */
     fun trackNextPlayer(playerName: String) {
+        if (stage != GameStage.PROCESSING) return
         var i = trackRunnerMap[playerName] ?: return
-        i++
+        while (true) {
+            i++
+            i %= speedrunnerList.size
+            val speedrunner = speedrunnerList[i]
+            if (speedrunner.gameMode == GameMode.SURVIVAL) {
+                continue
+            }
+        }
         trackRunnerMap[playerName] = i % speedrunnerList.size
     }
     

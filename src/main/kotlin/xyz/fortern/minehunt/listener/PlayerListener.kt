@@ -3,8 +3,10 @@ package xyz.fortern.minehunt.listener
 import org.bukkit.GameMode
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
@@ -29,12 +31,12 @@ class PlayerListener(
             console.spectatorTeam.addEntry(player.name)
         } else {
             // 在倒计时或进行阶段，玩家自动加入各自的Team
-            if (console.speedrunnerSet.contains(player)) {
+            if (console.isSpeedrunner(player)) {
                 console.speedrunnerTeam.addEntry(player.name)
-            } else if (console.hunterSet.contains(player)) {
+            } else if (console.isHunter(player)) {
                 console.hunterTeam.addEntry(player.name)
             } else {
-                console.spectatorSet.add(player)
+                console.joinSpectator(player)
             }
         }
     }
@@ -51,6 +53,9 @@ class PlayerListener(
         
     }
     
+    /**
+     * 玩家丢弃物品时，阻止玩家丢弃猎人指南针
+     */
     @EventHandler
     fun onDropItem(event: PlayerDropItemEvent) {
         val itemStack = event.itemDrop.itemStack
@@ -58,8 +63,28 @@ class PlayerListener(
             return
         }
         val player = event.player
-        console.trackRunnerMap[player.name] = 0
+//        console.trackRunnerMap[player.name] = 0
     }
     
+    /**
+     * 玩家想要移动时，在特定情况下阻止玩家移动
+     */
+    @EventHandler
+    fun onPlayerMove(event: PlayerMoveEvent) {
+        // 暂且通过取消事件的方法阻止玩家移动
+        if (console.stage != GameStage.PROCESSING) return
+        val player = event.player
+        // 猎人等待出生时，或等待复活时，阻止其移动
+        if (console.isHunter(player) && (console.hunterSpawnCD != null || player.gameMode == GameMode.SPECTATOR))
+            event.isCancelled = true
+    }
+    
+    fun onPlayerDeath(event: PlayerDeathEvent) {
+        val player = event.entity
+        if (console.isHunter(player)) {
+            // 猎人置为旁观者模式
+            player.gameMode = GameMode.SPECTATOR
+        }
+    }
     
 }

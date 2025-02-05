@@ -24,5 +24,7 @@ class MinehuntCommand: CommandExecutor {
             sender.sendMessage("§a/minehunt set <time>")
             sender.sendMessage("§a/minehunt set <time>")
         }
+        
+        return true
     }
 }
