@@ -54,16 +54,14 @@ class PlayerListener(
     }
     
     /**
-     * 玩家丢弃物品时，阻止玩家丢弃猎人指南针
+     * 玩家丢弃物品时，阻止玩家丢弃猎人指南针，并将追踪目标切换到下一个
      */
     @EventHandler
     fun onDropItem(event: PlayerDropItemEvent) {
         val itemStack = event.itemDrop.itemStack
-        if (!console.isHunterCompass(itemStack)) {
-            return
-        }
-        val player = event.player
-//        console.trackRunnerMap[player.name] = 0
+        if (!console.isHunterCompass(itemStack)) return
+        
+        console.trackNextPlayer(event.player.name)
     }
     
     /**
@@ -73,18 +71,20 @@ class PlayerListener(
     fun onPlayerMove(event: PlayerMoveEvent) {
         // 暂且通过取消事件的方法阻止玩家移动
         if (console.stage != GameStage.PROCESSING) return
+        
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
         if (console.isHunter(player) && (console.hunterSpawnCD != null || player.gameMode == GameMode.SPECTATOR))
             event.isCancelled = true
     }
     
+    /**
+     * 处理玩家死亡事件
+     */
+    @EventHandler
     fun onPlayerDeath(event: PlayerDeathEvent) {
         val player = event.entity
-        if (console.isHunter(player)) {
-            // 猎人置为旁观者模式
-            player.gameMode = GameMode.SPECTATOR
-        }
+        console.handlePlayerDeath(player)
     }
     
 }
