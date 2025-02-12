@@ -2,7 +2,6 @@ package xyz.fortern.minehunt
 
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
-import xyz.fortern.minehunt.command.GodCommand
 import xyz.fortern.minehunt.command.TestCommand
 import xyz.fortern.minehunt.listener.PlayerListener
 
@@ -22,9 +21,11 @@ class Minehunt : JavaPlugin() {
         // 初始化
         instance = this
         val console = Console()
+        
+        // 注册命令
         Bukkit.getPluginManager().registerEvents(PlayerListener(console), this)
         
-        Bukkit.getPluginCommand("god")!!.setExecutor(GodCommand())
+        // 注册事件
         Bukkit.getPluginCommand("test")!!.setExecutor(TestCommand())
         
     }

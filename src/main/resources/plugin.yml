@@ -4,8 +4,8 @@ main: xyz.fortern.minehunt.Minehunt
 api-version: '1.21'
 authors: [ Fortern ]
 
+# TODO 插件加载时机
+
 commands:
-  god:
-    description: "使自己无敌"
   test:
     description: "测试"

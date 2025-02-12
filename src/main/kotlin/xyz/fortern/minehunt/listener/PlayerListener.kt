@@ -7,7 +7,6 @@ import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
-import org.bukkit.event.player.PlayerQuitEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 
@@ -39,18 +38,6 @@ class PlayerListener(
                 console.joinSpectator(player)
             }
         }
-    }
-    
-    /**
-     * 玩家退出服务器时的操作
-     */
-    @EventHandler
-    fun onPlayerQuit(event: PlayerQuitEvent) {
-        val player = event.player
-        // 速通者退出时，从speedrunnerList中移除，避免指南针遍历
-//        if (console.stage == GameStage.PROCESSING && console.speedrunnerSet.contains(player))
-//            console.speedrunnerList.remove(player)
-        
     }
     
     /**

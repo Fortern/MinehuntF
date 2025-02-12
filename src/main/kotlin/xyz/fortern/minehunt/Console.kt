@@ -3,7 +3,12 @@ package xyz.fortern.minehunt
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.title.Title
-import org.bukkit.*
+import org.bukkit.Bukkit
+import org.bukkit.Difficulty
+import org.bukkit.GameMode
+import org.bukkit.GameRule
+import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -21,7 +26,7 @@ class Console {
     
     var stage: GameStage = GameStage.PREPARING
     
-    var overworld = Bukkit.getWorld("world")!!
+    private var overworld = Bukkit.getWorld("world")!!
     
     /**
      * 速通者队伍
