@@ -2,6 +2,7 @@ package xyz.fortern.minehunt
 
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
+import xyz.fortern.minehunt.command.MinehuntCommand
 import xyz.fortern.minehunt.command.TestCommand
 import xyz.fortern.minehunt.listener.PlayerListener
 
@@ -27,6 +28,7 @@ class Minehunt : JavaPlugin() {
         
         // 注册事件
         Bukkit.getPluginCommand("test")!!.setExecutor(TestCommand())
+        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console))
         
     }
     

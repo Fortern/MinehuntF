@@ -9,3 +9,6 @@ authors: [ Fortern ]
 commands:
   test:
     description: "测试"
+  minehunt:
+    description: "游戏主命令"
+    aliases: [mh]
