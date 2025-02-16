@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
 class Console {
     
     var stage: GameStage = GameStage.PREPARING
+        private set
     
     private var overworld = Bukkit.getWorld("world")!!
     
@@ -59,6 +60,16 @@ class Console {
      * 旁观者玩家集合
      */
     private val spectatorSet: MutableSet<Player> = HashSet()
+    
+    /**
+     * 终止游戏的投票统计
+     */
+    private val votingEndMap: MutableMap<String, Boolean> = HashMap()
+    
+    /**
+     * 投票计数
+     */
+    private var votingCount: Int = 0
     
     /**
      * 速通者列表，用于指南针指向的遍历
@@ -102,6 +113,8 @@ class Console {
      */
     private val hunterRespawnTasks: MutableMap<Player, BukkitTask> = HashMap()
     
+    // bukkit task start
+    
     /**
      * 游戏开始前的倒计时任务
      */
@@ -118,6 +131,13 @@ class Console {
      * 指南针刷新任务
      */
     private var compassRefreshTask: BukkitTask? = null
+    
+    /**
+     * 投票倒计时
+     */
+    private var voteTask: BukkitTask? = null
+    
+    // bukkit task end
     
     companion object {
         @JvmStatic
@@ -209,7 +229,7 @@ class Console {
      * 游戏开始前的倒计时
      */
     private fun countdownToStart() {
-        beginningCountdown = Bukkit.getScheduler().runTaskTimerAsynchronously(Minehunt.instance(), object : Runnable {
+        beginningCountdown = Bukkit.getScheduler().runTaskTimer(Minehunt.instance(), object : Runnable {
             private var countdown = 6
             override fun run() {
                 if (--countdown > 0) {
@@ -236,7 +256,7 @@ class Console {
      *
      * 游戏阶段由 PREPARING 变为 PROCESSING
      */
-    fun start() {
+    private fun start() {
         if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
         
         // 修改游戏规则
@@ -299,7 +319,7 @@ class Console {
         }
         
         // 猎人出生倒计时Task
-        hunterSpawnCD = Bukkit.getScheduler().runTaskTimer(Minehunt.instance(), Runnable {
+        hunterSpawnCD = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
             // 猎人设置初始状态
             hunterSet.forEach {
                 it.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
@@ -313,14 +333,68 @@ class Console {
             
             // 通知速通者
             speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
-        }, RuleItem.HUNTER_READY_CD.value * 20L, 0)
+        }, RuleItem.HUNTER_READY_CD.value * 20L)
         
+    }
+    
+    /**
+     * 投票结束游戏
+     */
+    fun voteForStop(player: Player) {
+        if (stage != GameStage.PROCESSING) {
+            player.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
+            return
+        }
+        if (!isHunter(player) && !isSpeedrunner(player)) {
+            player.sendMessage(Component.text("只有游戏中的玩家才能投票"))
+            return
+        }
+        val name = player.name
+        if (voteTask == null) {
+            // 投票发起
+            voteTask = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
+                voteTask = null
+                votingEndMap.clear()
+                votingCount = 0
+            }, 60)
+            // 统计参与投票的玩家
+            speedrunnerSet.forEach {
+                // 生存模式的速通者统计进来
+                if (it.isOnline && it.gameMode == GameMode.SURVIVAL) {
+                    votingEndMap[it.name] = false
+                }
+            }
+            hunterSet.forEach {
+                if (it.isOnline) {
+                    votingEndMap[it.name] = false
+                }
+            }
+            Bukkit.getOnlinePlayers().forEach {
+                it.sendMessage(Component.text("${name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop"))
+            }
+        }
+        // 玩家投票
+        if (!votingEndMap.containsKey(name)) {
+            player.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+            return
+        }
+        votingEndMap[name] = true
+        votingCount++
+        player.sendMessage(Component.text("voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
+        if (votingCount != votingEndMap.size) {
+            return
+        }
+        // 投票完成，游戏结束
+        Bukkit.getOnlinePlayers().forEach {
+            it.sendMessage(Component.text("投票完成，游戏结束", NamedTextColor.GOLD))
+        }
+        end()
     }
     
     /**
      * 结束处理
      */
-    fun end() {
+    private fun end() {
         // TODO 延迟传送至出生点
         
         // 取消剩余的复活任务

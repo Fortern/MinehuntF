@@ -1,19 +1,22 @@
 package xyz.fortern.minehunt.command
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
+import org.bukkit.entity.Player
 import xyz.fortern.minehunt.Console
 
 /**
  * 主命令 minehunt
  */
 class MinehuntCommand(
-    val console: Console
+    private val console: Console
 ) : TabExecutor {
     
     private val subCommand: List<String> = listOf("help", "join", "leave", "rule", "stat", "stop")
+    private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
     
     /**
      * 执行命令
@@ -60,19 +63,19 @@ class MinehuntCommand(
             }
             
             "leave" -> {
-                onLeave(sender, args, flag)
-            }
-            
-            "start" -> {
-                onStart(sender, args, flag)
-            }
-            
-            "stop" -> {
-                onStop(sender, args, flag)
+                onLeave(sender, flag)
             }
             
             "rule" -> {
                 onRule(sender, args, flag)
+            }
+            
+            "start" -> {
+                onStart(sender, flag)
+            }
+            
+            "stop" -> {
+                onStop(sender, flag)
             }
             
             else -> {
@@ -87,38 +90,93 @@ class MinehuntCommand(
     }
     
     /**
-     * 查看或修改游戏规则
+     * 玩家加入队伍
      */
-    private fun onRule(sender: CommandSender, args: List<String>, execute: Boolean): List<String>? {
-        TODO("Not yet implemented")
+    private fun onJoin(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
+        if (args.size == 1) {
+            if (flag) {
+                sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
+            }
+            return null
+        }
+        val teamName = args[1]
+        if (flag) {
+            if (sender !is Player) {
+                sender.sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
+                return null
+            }
+            when (teamName) {
+                "hunter" -> {
+                    console.joinHunter(sender)
+                }
+                "speedrunner" -> {
+                    console.joinSpeedrunner(sender)
+                }
+                "spectator" -> {
+                    console.joinSpectator(sender)
+                }
+                else -> {
+                    sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
+                }
+            }
+            return null
+        } else {
+            if (args.size == 2) {
+                return teams.filter { it.startsWith(args[0]) }
+            }
+        }
+        
+        return null
     }
     
     /**
-     * 游戏结束
+     * 玩家离开队伍
      */
-    private fun onStop(sender: CommandSender, args: List<String>, execute: Boolean): List<String>? {
+    private fun onLeave(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) {
+            if (sender !is Player) {
+                sender.sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
+            } else {
+                console.joinSpectator(sender)
+            }
+        }
+        return null
+    }
+    
+    /**
+     * 查看或修改游戏规则
+     */
+    private fun onRule(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
         TODO("Not yet implemented")
     }
     
     /**
      * 游戏开始
      */
-    private fun onStart(sender: CommandSender, args: List<String>, execute: Boolean): List<String>? {
-        TODO("Not yet implemented")
+    private fun onStart(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) {
+            // TODO 正在编辑规则时，也不能开始
+            if (console.stage == Console.GameStage.PREPARING) {
+                console.tryStart()
+            } else {
+                sender.sendMessage("游戏已经开始或已经结束")
+            }
+        }
+        return null
     }
     
     /**
-     * 玩家离开队伍
+     * 游戏结束
      */
-    private fun onLeave(sender: CommandSender, args: List<String>, execute: Boolean): List<String>? {
-        TODO("Not yet implemented")
-    }
-    
-    /**
-     * 玩家加入队伍
-     */
-    private fun onJoin(sender: CommandSender, args: List<String>, execute: Boolean): List<String>? {
-        TODO("Not yet implemented")
+    private fun onStop(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) {
+            if (sender is Player) {
+                console.voteForStop(sender)
+            } else {
+                sender.sendMessage(Component.text("只有游戏中的玩家才能投票"))
+            }
+        }
+        return null
     }
     
     /**
