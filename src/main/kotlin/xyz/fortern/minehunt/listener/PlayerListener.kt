@@ -1,8 +1,10 @@
 package xyz.fortern.minehunt.listener
 
 import org.bukkit.GameMode
+import org.bukkit.entity.EnderDragon
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.entity.EntityDeathEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
@@ -72,6 +74,16 @@ class PlayerListener(
     fun onPlayerDeath(event: PlayerDeathEvent) {
         val player = event.entity
         console.handlePlayerDeath(player)
+    }
+    
+    /**
+     * 末影龙死亡事件
+     */
+    @EventHandler
+    fun onDragonDeath(event: EntityDeathEvent) {
+        if (event.entity is EnderDragon && console.stage == GameStage.PROCESSING) {
+            console.end("speedrunner")
+        }
     }
     
 }

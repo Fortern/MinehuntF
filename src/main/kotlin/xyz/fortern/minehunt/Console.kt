@@ -17,6 +17,7 @@ import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.RuleItem
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -60,6 +61,11 @@ class Console {
      * 旁观者玩家集合
      */
     private val spectatorSet: MutableSet<Player> = HashSet()
+    
+    /**
+     * 淘汰玩家集合
+     */
+    private val outPlayers: MutableSet<UUID> = HashSet()
     
     /**
      * 终止游戏的投票统计
@@ -360,7 +366,7 @@ class Console {
             // 统计参与投票的玩家
             speedrunnerSet.forEach {
                 // 生存模式的速通者统计进来
-                if (it.isOnline && it.gameMode == GameMode.SURVIVAL) {
+                if (it.isOnline && !outPlayers.contains(it.uniqueId)) {
                     votingEndMap[it.name] = false
                 }
             }
@@ -386,29 +392,31 @@ class Console {
         }
         // 投票完成，游戏结束
         Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage(Component.text("投票完成，游戏结束", NamedTextColor.GOLD))
+            it.sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
         }
-        end()
+        end(null)
     }
     
     /**
      * 结束处理
      */
-    private fun end() {
-        // TODO 延迟传送至出生点
-        
-        // 取消剩余的复活任务
-        val iterator = hunterRespawnTasks.iterator()
-        while (iterator.hasNext()) {
-            iterator.next().value.cancel()
-            iterator.remove()
-        }
-        // 所有人传送至出生点，设为生存模式
-        Bukkit.getOnlinePlayers().forEach {
-            it.gameMode = GameMode.SURVIVAL
-            it.teleport(overworld.spawnLocation)
-        }
+    fun end(winner: String?) {
         stage = GameStage.OVER
+        // 所有人设为生存模式
+        Bukkit.getOnlinePlayers().forEach {
+            it.sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
+            if (winner != null) {
+                it.sendMessage(Component.text("获胜者：$winner", NamedTextColor.GOLD))
+            } else {
+                it.sendMessage(Component.text("没有赢家", NamedTextColor.GOLD))
+            }
+            it.gameMode = GameMode.SURVIVAL
+        }
+        // 取消剩余的复活任务
+        hunterRespawnTasks.forEach {
+            it.value.cancel()
+        }
+        hunterRespawnTasks.clear()
     }
     
     /**
@@ -429,7 +437,7 @@ class Console {
             j++
             j %= speedrunnerList.size
             val speedrunner = speedrunnerList[i]
-            if (speedrunner.gameMode == GameMode.SURVIVAL && speedrunner.isOnline || i == j) {
+            if (!outPlayers.contains(speedrunner.uniqueId) && speedrunner.isOnline || i == j) {
                 trackRunnerMap[playerName] = j
                 break
             }
@@ -440,11 +448,15 @@ class Console {
      * 处理玩家死亡
      */
     fun handlePlayerDeath(player: Player) {
-        if (isHunter(player)) {
-            // 猎人置为旁观者模式
+        if (isSpeedrunner(player)) {
+            // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
-        } else if (isSpeedrunner(player)) {
-            // 猎人置为旁观者模式
+            outPlayers.add(player.uniqueId)
+            if (outPlayers.size == hunterSet.size) {
+                end("hunter")
+            }
+        } else if (isHunter(player)) {
+            // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
             val task = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
                 player.gameMode = GameMode.SURVIVAL
