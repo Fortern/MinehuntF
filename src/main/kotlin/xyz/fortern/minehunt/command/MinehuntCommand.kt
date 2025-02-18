@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
 import org.bukkit.entity.Player
 import xyz.fortern.minehunt.Console
+import xyz.fortern.minehunt.rule.RuleKey
 
 /**
  * 主命令 minehunt
@@ -17,6 +18,10 @@ class MinehuntCommand(
     
     private val subCommand: List<String> = listOf("help", "join", "leave", "rule", "stat", "stop")
     private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
+    private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
+    
+    private val ruleHelp: Component = Component.text("/minehunt rule <ruleItem>\n查看一项规则的详情\n")
+        .append(Component.text("/minehunt rule <ruleItem> <value>\n为一项规则设置新的值"))
     
     /**
      * 执行命令
@@ -109,12 +114,15 @@ class MinehuntCommand(
                 "hunter" -> {
                     console.joinHunter(sender)
                 }
+                
                 "speedrunner" -> {
                     console.joinSpeedrunner(sender)
                 }
+                
                 "spectator" -> {
                     console.joinSpectator(sender)
                 }
+                
                 else -> {
                     sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
                 }
@@ -147,7 +155,64 @@ class MinehuntCommand(
      * 查看或修改游戏规则
      */
     private fun onRule(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
-        TODO("Not yet implemented")
+        // args[0] == rule
+        if (args.size == 1) {
+            if (flag) {
+                sender.sendMessage(ruleHelp)
+            }
+            return null
+        }
+        
+        val rule = args[1]
+        when (rule) {
+            "hunter_respawn_cd" -> {
+                if (args.size == 2) {
+                    // 获取命令详情
+                    if (flag) {
+                        sendRuleInfo(sender, RuleKey.HUNTER_READY_CD)
+                    }
+                    return null
+                } else if (args.size == 3) {
+                    if (flag) {
+                        if (console.gameRules.setGameRuleValueSafe(RuleKey.HUNTER_READY_CD, args[2])) {
+                        
+                        } else {
+                        
+                        }
+                    } else {
+                    
+                    }
+                } else {
+                    if (flag) {
+                        sender.sendMessage(Component.text("参数过多"))
+                    } else {
+                        return null
+                    }
+                }
+            }
+            
+            "hunter_ready_cd" -> {
+                if (args.size == 2) {
+                
+                }
+            }
+            
+            "friendly_fire" -> {
+                if (args.size == 2) {
+                
+                }
+            }
+            
+            else -> {
+                return if (flag) {
+                    sender.sendMessage(Component.text("不存在的规则项"))
+                    null
+                } else {
+                    if (args.size == 2) subCommand.filter { it.startsWith(args[0]) } else null
+                }
+            }
+        }
+        return null
     }
     
     /**
@@ -177,6 +242,16 @@ class MinehuntCommand(
             }
         }
         return null
+    }
+    
+    /**
+     * 发送规则详情
+     */
+    private fun sendRuleInfo(sender: CommandSender, ruleKey: RuleKey<*>) {
+        sender.sendMessage("游戏规则: " + ruleKey.name)
+        sender.sendMessage("描述: " + ruleKey.info)
+        sender.sendMessage("值类型: " + ruleKey.typeInfo)
+        sender.sendMessage("数值: " + console.gameRules.getRuleValue(ruleKey))
     }
     
     /**

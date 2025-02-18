@@ -16,7 +16,8 @@ import org.bukkit.inventory.meta.CompassMeta
 import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Team
-import xyz.fortern.minehunt.rule.RuleItem
+import xyz.fortern.minehunt.rule.GameRules
+import xyz.fortern.minehunt.rule.RuleKey
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,6 +25,11 @@ import java.util.concurrent.ConcurrentHashMap
  * 游戏控制台
  */
 class Console {
+    
+    /**
+     * 全部的游戏规则
+     */
+    val gameRules = GameRules()
     
     var stage: GameStage = GameStage.PREPARING
         private set
@@ -339,7 +345,7 @@ class Console {
             
             // 通知速通者
             speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
-        }, RuleItem.HUNTER_READY_CD.value * 20L)
+        }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
         
     }
     
