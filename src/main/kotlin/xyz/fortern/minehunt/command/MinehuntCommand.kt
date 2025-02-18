@@ -164,55 +164,64 @@ class MinehuntCommand(
         }
         
         val rule = args[1]
-        when (rule) {
+        return when (rule) {
             "hunter_respawn_cd" -> {
-                if (args.size == 2) {
-                    // 获取命令详情
-                    if (flag) {
-                        sendRuleInfo(sender, RuleKey.HUNTER_READY_CD)
-                    }
-                    return null
-                } else if (args.size == 3) {
-                    if (flag) {
-                        if (console.gameRules.setGameRuleValueSafe(RuleKey.HUNTER_READY_CD, args[2])) {
-                        
-                        } else {
-                        
-                        }
-                    } else {
-                    
-                    }
-                } else {
-                    if (flag) {
-                        sender.sendMessage(Component.text("参数过多"))
-                    } else {
-                        return null
-                    }
-                }
+                getOrChangeRule(args, flag, sender, RuleKey.HUNTER_RESPAWN_CD)
             }
             
             "hunter_ready_cd" -> {
-                if (args.size == 2) {
-                
-                }
+                getOrChangeRule(args, flag, sender, RuleKey.HUNTER_READY_CD)
             }
             
             "friendly_fire" -> {
-                if (args.size == 2) {
-                
-                }
+                getOrChangeRule(args, flag, sender, RuleKey.FRIENDLY_FIRE)
             }
             
             else -> {
-                return if (flag) {
+                if (flag) {
                     sender.sendMessage(Component.text("不存在的规则项"))
                     null
                 } else {
-                    if (args.size == 2) subCommand.filter { it.startsWith(args[0]) } else null
+                    if (args.size == 2) rules.filter { it.startsWith(args[0]) } else null
                 }
             }
         }
-        return null
+    }
+    
+    /**
+     * 读取或改变游戏规则
+     */
+    private fun getOrChangeRule(
+        args: List<String>,
+        flag: Boolean,
+        sender: CommandSender,
+        ruleKey: RuleKey<*>
+    ): List<String>? {
+        return if (args.size == 2) {
+            // 获取规则详情
+            if (flag) {
+                sendRuleInfo(sender, ruleKey)
+            }
+            null
+        } else if (args.size == 3) {
+            // 给规则赋值
+            if (flag) {
+                if (console.gameRules.setGameRuleValueSafe(ruleKey, args[2])) {
+                    sender.sendMessage(Component.text("规则修改成功", NamedTextColor.GREEN))
+                } else {
+                    sender.sendMessage(Component.text("不合适的值", NamedTextColor.RED))
+                }
+                null
+            } else {
+                ruleKey.recommendedValues
+            }
+        } else {
+            // 参数过多
+            if (flag) {
+                sender.sendMessage(Component.text("参数过多"))
+            }
+            null
+        }
     }
     
     /**

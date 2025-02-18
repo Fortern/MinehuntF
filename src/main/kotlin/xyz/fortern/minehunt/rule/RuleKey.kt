@@ -25,9 +25,14 @@ class RuleKey<T> private constructor(
     val typeInfo: String,
     
     /**
+     * 命令补全时的推荐值
+     */
+    val recommendedValues: List<String>,
+    
+    /**
      * 对输入的String进行校验，成功则返回转换后的值，失败则返回null
      */
-    val validate: (String) -> T?
+    val validate: (String) -> T?,
 ) {
     /**
      * 这里存放每一个规则的Key
@@ -41,22 +46,31 @@ class RuleKey<T> private constructor(
             }
         }
         
-        val HUNTER_READY_CD = RuleKey("hunter_ready_cd", "猎人出生倒计时(秒)", Int::class.java, "Integer") {
-            try {
-                val i = it.toInt()
-                if (i in 0..120) i else null
-            } catch (ex: NumberFormatException) {
-                null
+        val HUNTER_READY_CD =
+            RuleKey("hunter_ready_cd", "猎人出生倒计时(秒)", Int::class.java, "Integer", listOf("0", "15", "30")) {
+                try {
+                    val i = it.toInt()
+                    if (i in 0..120) i else null
+                } catch (ex: NumberFormatException) {
+                    null
+                }
             }
-        }
-        val HUNTER_RESPAWN_CD = RuleKey("hunter_respawn_cd", "猎人重生倒计时(秒)", Int::class.java, "Integer") {
-            try {
-                val i = it.toInt()
-                if (i in 0..120) i else null
-            } catch (ex: NumberFormatException) {
-                null
+        val HUNTER_RESPAWN_CD =
+            RuleKey("hunter_respawn_cd", "猎人重生倒计时(秒)", Int::class.java, "Integer", listOf("0, 15, 30")) {
+                try {
+                    val i = it.toInt()
+                    if (i in 0..120) i else null
+                } catch (ex: NumberFormatException) {
+                    null
+                }
             }
-        }
-        val FRIENDLY_FIRE = RuleKey("friendly_fire", "队友之间是否有伤害", Boolean::class.java, "Boolean", boolValidate)
+        val FRIENDLY_FIRE = RuleKey(
+            "friendly_fire",
+            "队友之间是否有伤害",
+            Boolean::class.java,
+            "Boolean",
+            listOf("true", "false"),
+            boolValidate
+        )
     }
 }

@@ -16,14 +16,14 @@ class GameRules internal constructor() {
         setRuleValue(FRIENDLY_FIRE, true)
     }
     
-    fun <T : Any> setGameRuleValueSafe(rule: RuleKey<T>, value: String): Boolean {
-        val okValue = rule.validate(value) ?: return false
+    fun <T> setGameRuleValueSafe(rule: RuleKey<T>, value: String): Boolean {
+        val okValue: T = rule.validate(value) ?: return false
         setRuleValue(rule, okValue)
         return true
     }
     
-    private fun <T : Any> setRuleValue(rule: RuleKey<T>, value: T) {
-        map[rule] = value
+    private fun <T> setRuleValue(rule: RuleKey<T>, value: T) {
+        map[rule] = value!!
     }
     
     @Suppress("UNCHECKED_CAST")
