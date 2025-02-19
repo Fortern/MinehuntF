@@ -11,6 +11,7 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.CompassMeta
 import org.bukkit.scheduler.BukkitRunnable
@@ -30,6 +31,8 @@ class Console {
      * 全部的游戏规则
      */
     val gameRules = GameRules()
+    
+    val ruleBook = Bukkit.createInventory(null, InventoryType.HOPPER, Component.text("Game Rules"))
     
     var stage: GameStage = GameStage.PREPARING
         private set
