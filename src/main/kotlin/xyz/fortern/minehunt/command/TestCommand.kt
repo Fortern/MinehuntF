@@ -15,6 +15,8 @@ import org.bukkit.inventory.ItemStack
  */
 class TestCommand : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.isEmpty()) return false
+        
         when (args[0]) {
             // 发送消息
             "sendTo" -> {

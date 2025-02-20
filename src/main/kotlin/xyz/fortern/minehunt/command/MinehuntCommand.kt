@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
 import org.bukkit.entity.Player
 import xyz.fortern.minehunt.Console
+import xyz.fortern.minehunt.Minehunt
 import xyz.fortern.minehunt.rule.RuleKey
 
 /**
@@ -16,12 +17,31 @@ class MinehuntCommand(
     private val console: Console
 ) : TabExecutor {
     
-    private val subCommand: List<String> = listOf("help", "join", "leave", "rule", "stat", "stop")
+    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "stat", "stop")
     private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
     private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
     
-    private val ruleHelp: Component = Component.text("/minehunt rule <ruleItem>\n查看一项规则的详情\n")
-        .append(Component.text("/minehunt rule <ruleItem> <value>\n为一项规则设置新的值"))
+    private val helpMessages = listOf(
+        Component.text("Minehunt v${Minehunt.instance().pluginMeta.version}", NamedTextColor.GREEN),
+        Component.text("/minehunt help  ", NamedTextColor.GOLD)
+            .append(Component.text("帮助信息", NamedTextColor.WHITE)),
+        Component.text("/minehunt join (hunter|speedrunner|spectator)  ", NamedTextColor.GOLD)
+            .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
+        Component.text("/minehunt leave  ", NamedTextColor.GOLD)
+            .append(Component.text("加入观察者阵营", NamedTextColor.WHITE)),
+        Component.text("/minehunt rule  ", NamedTextColor.GOLD)
+            .append(Component.text("查看或修改游戏规则", NamedTextColor.WHITE)),
+        Component.text("/minehunt start  ", NamedTextColor.GOLD)
+            .append(Component.text("开始游戏", NamedTextColor.WHITE)),
+        Component.text("/minehunt stop  ", NamedTextColor.GOLD)
+            .append(Component.text("进行中止游戏的投票", NamedTextColor.WHITE))
+    )
+    private val ruleHelpMessages = listOf(
+        Component.text("/minehunt rule <ruleItem>  ", NamedTextColor.GREEN)
+            .append(Component.text("查看一项规则的详情", NamedTextColor.WHITE)),
+        Component.text("/minehunt rule <ruleItem> <value>  ", NamedTextColor.GREEN)
+            .append(Component.text("为一项规则设置新的值", NamedTextColor.WHITE))
+    )
     
     /**
      * 执行命令
@@ -60,9 +80,18 @@ class MinehuntCommand(
      */
     private fun handlerCommand(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
         if (args.isEmpty() || args[0] == "" || args[0] == "help" || args[0] == "?")
-            return if (flag) sendHelp(sender) else subCommand
+            return if (flag) {
+                sendHelp(sender)
+                null
+            } else {
+                subCommands
+            }
         
         return when (args[0]) {
+            "help" -> {
+                onHelp(sender, flag)
+            }
+            
             "join" -> {
                 onJoin(sender, args, flag)
             }
@@ -88,10 +117,15 @@ class MinehuntCommand(
                     sender.sendMessage(Component.text("错误的子命令"))
                     null
                 } else {
-                    if (args.size == 1) subCommand.filter { it.startsWith(args[0]) } else null
+                    if (args.size == 1) subCommands.filter { it.startsWith(args[0]) } else null
                 }
             }
         }
+    }
+    
+    private fun onHelp(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) sendHelp(sender)
+        return null
     }
     
     /**
@@ -130,7 +164,7 @@ class MinehuntCommand(
             return null
         } else {
             if (args.size == 2) {
-                return teams.filter { it.startsWith(args[0]) }
+                return teams.filter { it.startsWith(teamName) }
             }
         }
         
@@ -158,13 +192,12 @@ class MinehuntCommand(
         // args[0] == rule
         if (args.size == 1) {
             if (flag) {
-                sender.sendMessage(ruleHelp)
+                sendHelpRule(sender)
             }
             return null
         }
         
-        val rule = args[1]
-        return when (rule) {
+        return when (val rule = args[1]) {
             "hunter_respawn_cd" -> {
                 getOrChangeRule(args, flag, sender, RuleKey.HUNTER_RESPAWN_CD)
             }
@@ -182,7 +215,7 @@ class MinehuntCommand(
                     sender.sendMessage(Component.text("不存在的规则项"))
                     null
                 } else {
-                    if (args.size == 2) rules.filter { it.startsWith(args[0]) } else null
+                    if (args.size == 2) rules.filter { it.startsWith(rule) } else null
                 }
             }
         }
@@ -207,7 +240,14 @@ class MinehuntCommand(
             // 给规则赋值
             if (flag) {
                 if (console.gameRules.setGameRuleValueSafe(ruleKey, args[2])) {
-                    sender.sendMessage(Component.text("规则修改成功", NamedTextColor.GREEN))
+                    sender.sendMessage(
+                        Component.text(sender.name, NamedTextColor.YELLOW)
+                            .append(Component.text("修改规则项", NamedTextColor.WHITE))
+                            .append(Component.text(ruleKey.name, NamedTextColor.GOLD))
+                            .append(Component.text("值为", NamedTextColor.WHITE))
+                            .append(Component.text(args[2], NamedTextColor.GREEN))
+                    )
+                    console.refreshEntry(ruleKey)
                 } else {
                     sender.sendMessage(Component.text("不合适的值", NamedTextColor.RED))
                 }
@@ -229,7 +269,6 @@ class MinehuntCommand(
      */
     private fun onStart(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
-            // TODO 正在编辑规则时，也不能开始
             if (console.stage == Console.GameStage.PREPARING) {
                 console.tryStart()
             } else {
@@ -266,12 +305,14 @@ class MinehuntCommand(
     /**
      * 发送帮助信息
      */
-    private fun sendHelp(sender: CommandSender): List<String>? {
-        sender.sendMessage("§aMinehunt v1.0.0")
-        sender.sendMessage("§a/minehunt help")
-        sender.sendMessage("§a/minehunt start")
-        sender.sendMessage("§a/minehunt stop")
-        sender.sendMessage("§a/minehunt set <time>")
-        return null
+    private fun sendHelp(sender: CommandSender) {
+        helpMessages.forEach { sender.sendMessage(it) }
+    }
+    
+    /**
+     * 发送rule子命令的帮助信息
+     */
+    private fun sendHelpRule(sender: CommandSender) {
+        ruleHelpMessages.forEach { sender.sendMessage(it) }
     }
 }

@@ -11,11 +11,12 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
-import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.CompassMeta
 import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
+import org.bukkit.scoreboard.Criteria
+import org.bukkit.scoreboard.DisplaySlot
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
@@ -32,11 +33,20 @@ class Console {
      */
     val gameRules = GameRules()
     
-    val ruleBook = Bukkit.createInventory(null, InventoryType.HOPPER, Component.text("Game Rules"))
-    
+    /**
+     * 游戏阶段
+     */
     var stage: GameStage = GameStage.PREPARING
         private set
     
+    /**
+     * 计分板
+     */
+    private val scoreboard = Bukkit.getScoreboardManager().mainScoreboard
+    
+    /**
+     * 主世界
+     */
     private var overworld = Bukkit.getWorld("world")!!
     
     /**
@@ -164,7 +174,8 @@ class Console {
     
     init {
         instance = this
-        // 初始化游戏规则
+        setRuleScoreboard()
+        // 初始化 Minecraft 游戏规则
         overworld.worldBorder.size = 32.0
         overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
         overworld.setGameRule(GameRule.DO_WEATHER_CYCLE, false)
@@ -473,6 +484,43 @@ class Console {
             }, 20)
             hunterRespawnTasks[player] = task
         }
+    }
+    
+    private fun setRuleScoreboard() {
+        //清除旧的计分板信息
+        scoreboard.teams.forEach { it.unregister() }
+        val objective = scoreboard.getObjective("rule-list")
+        objective?.unregister()
+        
+        //设置新的计分板信息
+        val ruleListObjective = scoreboard.registerNewObjective(
+            "rule-list",
+            Criteria.DUMMY,
+            Component.text("游戏规则", NamedTextColor.DARK_AQUA)
+        )
+        val rules = gameRules.getAllRules()
+        rules.onEachIndexed { i, entry ->
+            val entryId = entry.key.name
+            val score = ruleListObjective.getScore(entryId)
+                .apply { customName(Component.text(entry.key.info, NamedTextColor.GOLD)) }
+            score.score = rules.size - i
+            val teamForOneRule = scoreboard.registerNewTeam(entryId)
+            teamForOneRule.addEntry(entryId)
+            teamForOneRule.suffix(
+                Component.text(": ").append(Component.text(entry.value.toString(), NamedTextColor.GREEN))
+            )
+        }
+        
+        ruleListObjective.displaySlot = DisplaySlot.SIDEBAR
+    }
+    
+    fun refreshEntry(ruleKey: RuleKey<*>) {
+        val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
+        teamForOneRule.suffix(
+            Component.text(": ").append(
+                Component.text(gameRules.getRuleValue(ruleKey).toString(), NamedTextColor.GREEN)
+            )
+        )
     }
     
     /**
