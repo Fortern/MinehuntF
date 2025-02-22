@@ -52,7 +52,7 @@ class PlayerListener(
         val itemStack = event.itemDrop.itemStack
         if (!console.isHunterCompass(itemStack)) return
         
-        console.trackNextPlayer(event.player.name)
+        console.trackNextPlayer(event.player)
     }
     
     /**

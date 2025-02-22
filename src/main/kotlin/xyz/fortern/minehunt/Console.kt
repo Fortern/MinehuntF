@@ -47,12 +47,12 @@ class Console {
     /**
      * 主世界
      */
-    val overworld = Bukkit.getWorld("world")!!
+    private val overworld = Bukkit.getWorld("world")!!
     
     /**
      * 下界
      */
-    val nether = Bukkit.getWorld("world_nether")!!
+    private val nether = Bukkit.getWorld("world_nether")!!
     
     /**
      * 速通者队伍
@@ -74,17 +74,17 @@ class Console {
     /**
      * 速通者列表
      */
-    private val speedrunnerSet: MutableSet<Player> = HashSet()
+    private val speedrunnerSet: MutableSet<UUID> = HashSet()
     
     /**
      * 猎人玩家集合
      */
-    private val hunterSet: MutableSet<Player> = HashSet()
+    private val hunterSet: MutableSet<UUID> = HashSet()
     
     /**
      * 旁观者玩家集合
      */
-    private val spectatorSet: MutableSet<Player> = HashSet()
+    private val spectatorSet: MutableSet<UUID> = HashSet()
     
     /**
      * 淘汰玩家集合
@@ -94,7 +94,7 @@ class Console {
     /**
      * 终止游戏的投票统计
      */
-    private val votingEndMap: MutableMap<String, Boolean> = HashMap()
+    private val votingEndMap: MutableMap<UUID, Boolean> = HashMap()
     
     /**
      * 投票计数
@@ -104,7 +104,7 @@ class Console {
     /**
      * 速通者列表，用于指南针指向的遍历
      */
-    private lateinit var speedrunnerList: List<Player>
+    private lateinit var speedrunnerList: List<UUID>
     
     /**
      * 玩家离开主世界时最后的位置
@@ -119,7 +119,7 @@ class Console {
     /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
-    private val trackRunnerMap: MutableMap<String, Int> = ConcurrentHashMap()
+    private val trackRunnerMap: MutableMap<UUID, Int> = ConcurrentHashMap()
     
     /**
      * 猎人的指南针标记
@@ -215,43 +215,46 @@ class Console {
     /**
      * 判断玩家是否为猎人
      */
-    fun isHunter(player: Player) = hunterSet.contains(player)
+    fun isHunter(player: Player) = hunterSet.contains(player.uniqueId)
     
     /**
      * 判断是否为观察者
      */
-    fun isSpectator(player: Player) = spectatorSet.contains(player)
+    fun isSpectator(player: Player) = spectatorSet.contains(player.uniqueId)
     
     /**
      * 判断是否为速通者
      */
-    fun isSpeedrunner(player: Player) = speedrunnerSet.contains(player)
+    fun isSpeedrunner(player: Player) = speedrunnerSet.contains(player.uniqueId)
     
     /**
      * 加入猎人阵营
      */
     fun joinHunter(player: Player) {
-        speedrunnerSet.remove(player)
-        spectatorSet.remove(player)
-        hunterSet.add(player)
+        val uuid = player.uniqueId
+        speedrunnerSet.remove(uuid)
+        spectatorSet.remove(uuid)
+        hunterSet.add(uuid)
     }
     
     /**
      * 加入速通者阵营
      */
     fun joinSpeedrunner(player: Player) {
-        hunterSet.remove(player)
-        spectatorSet.remove(player)
-        speedrunnerSet.add(player)
+        val uuid = player.uniqueId
+        hunterSet.remove(uuid)
+        spectatorSet.remove(uuid)
+        speedrunnerSet.add(uuid)
     }
     
     /**
      * 加入观察者阵营
      */
     fun joinSpectator(player: Player) {
-        hunterSet.remove(player)
-        speedrunnerSet.remove(player)
-        spectatorSet.add(player)
+        val uuid = player.uniqueId
+        hunterSet.remove(uuid)
+        speedrunnerSet.remove(uuid)
+        spectatorSet.add(uuid)
     }
     
     /**
@@ -323,30 +326,32 @@ class Console {
         }
         
         // 速通者更改为生存模式，并加入speedrunnerList
-        speedrunnerSet.forEach { it.gameMode = GameMode.SURVIVAL }
+        speedrunnerSet.forEach { Bukkit.getPlayer(it)?.gameMode = GameMode.SURVIVAL }
         speedrunnerList = speedrunnerSet.toList()
         
         // 将猎人传送到世界底部，且指南针开始有所指向
         hunterSet.forEach {
-            it.teleport(Location(world, 0.0, -64.0, 0.0))
-            trackRunnerMap[it.name] = 0
+            Bukkit.getPlayer(it)?.teleport(Location(world, 0.0, -64.0, 0.0))
+            trackRunnerMap[it] = 0
         }
         
         // 创建指南针更新任务
         val compassTask = object : BukkitRunnable() {
             override fun run() {
                 hunterSet.forEach {
-                    if (!it.isOnline) return@forEach
-                    val i = (trackRunnerMap[it.name] ?: return@forEach) % speedrunnerList.size
-                    val speedrunner = speedrunnerList[i]
-                    val items = it.inventory.all(hunterCompass)
+                    val hunter = Bukkit.getPlayer(it) ?: return@forEach
+                    val i = (trackRunnerMap[it] ?: return@forEach) % speedrunnerList.size
+                    // hunter 正在追踪的 speedrunner
+                    val speedrunner = Bukkit.getPlayer(speedrunnerList[i]) ?: return@forEach
+                    val items = hunter.inventory.all(hunterCompass)
                     var flag = false
-                    items.forEach { (k, v) ->
-                        val lore = v.lore()
+                    items.forEach inner@{ (k, v) ->
                         // 避免玩家身上有多个猎人指南针
                         if (flag) {
-                            it.inventory.clear(k)
+                            hunter.inventory.clear(k)
+                            return@inner
                         }
+                        val lore = v.lore()
                         if (!lore.isNullOrEmpty() && lore[0].equals(compassFlag)) {
                             flag = true
                             // 让指南针指向某一个猎人
@@ -363,17 +368,18 @@ class Console {
         hunterSpawnCD = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
             // 猎人设置初始状态
             hunterSet.forEach {
-                it.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
-                it.gameMode = GameMode.SURVIVAL
-                it.teleport(spawnLocation)
-                it.inventory.addItem(hunterCompass)
+                val player = Bukkit.getPlayer(it) ?: return@forEach
+                player.sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
+                player.gameMode = GameMode.SURVIVAL
+                player.teleport(spawnLocation)
+                player.inventory.addItem(hunterCompass)
             }
             
             // “自动更新指南针”任务开始运行
             compassRefreshTask = compassTask.runTaskTimer(Minehunt.instance(), 0, 20)
             
             // 通知速通者
-            speedrunnerSet.forEach { it.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
+            speedrunnerSet.forEach { Bukkit.getPlayer(it)?.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
         }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
         
     }
@@ -390,7 +396,6 @@ class Console {
             player.sendMessage(Component.text("只有游戏中的玩家才能投票"))
             return
         }
-        val name = player.name
         if (voteTask == null) {
             // 投票发起
             voteTask = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
@@ -400,26 +405,26 @@ class Console {
             }, 60)
             // 统计参与投票的玩家
             speedrunnerSet.forEach {
+                Bukkit.getPlayer(it) ?: return@forEach
                 // 生存模式的速通者统计进来
-                if (it.isOnline && !outPlayers.contains(it.uniqueId)) {
-                    votingEndMap[it.name] = false
+                if (!outPlayers.contains(it)) {
+                    votingEndMap[it] = false
                 }
             }
             hunterSet.forEach {
-                if (it.isOnline) {
-                    votingEndMap[it.name] = false
-                }
+                Bukkit.getPlayer(it) ?: return@forEach
+                votingEndMap[it] = false
             }
             Bukkit.getOnlinePlayers().forEach {
-                it.sendMessage(Component.text("${name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop"))
+                it.sendMessage(Component.text("${player.name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop"))
             }
         }
         // 玩家投票
-        if (!votingEndMap.containsKey(name)) {
+        if (!votingEndMap.containsKey(player.uniqueId)) {
             player.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
             return
         }
-        votingEndMap[name] = true
+        votingEndMap[player.uniqueId] = true
         votingCount++
         player.sendMessage(Component.text("voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
         if (votingCount != votingEndMap.size) {
@@ -462,9 +467,9 @@ class Console {
     /**
      * 让该玩家所追踪的目标切换到下一个
      */
-    fun trackNextPlayer(playerName: String) {
+    fun trackNextPlayer(player: Player) {
         if (stage != GameStage.PROCESSING) return
-        val i = trackRunnerMap[playerName] ?: return
+        val i = trackRunnerMap[player.uniqueId] ?: return
         if (speedrunnerList.isEmpty()) return
         
         var j = i
@@ -472,8 +477,8 @@ class Console {
             j++
             j %= speedrunnerList.size
             val speedrunner = speedrunnerList[i]
-            if (!outPlayers.contains(speedrunner.uniqueId) && speedrunner.isOnline || i == j) {
-                trackRunnerMap[playerName] = j
+            if (!outPlayers.contains(speedrunner) && Bukkit.getPlayer(speedrunner) != null || i == j) {
+                trackRunnerMap[player.uniqueId] = j
                 break
             }
         }
