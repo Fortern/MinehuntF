@@ -9,6 +9,8 @@ import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
+import org.bukkit.event.player.PlayerPortalEvent
+import org.bukkit.event.player.PlayerTeleportEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 
@@ -63,8 +65,19 @@ class PlayerListener(
         
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
-        if (console.isHunter(player) && (console.hunterSpawnCD != null || player.gameMode == GameMode.SPECTATOR))
+        if (console.isHunter(player) && player.gameMode == GameMode.SPECTATOR)
             event.isCancelled = true
+    }
+    
+    /**
+     * 玩家想要传送时，在特定情况下阻止玩家传送
+     */
+    @EventHandler
+    fun onHunterReadyTP(event: PlayerTeleportEvent) {
+        val player = event.player
+        if (console.isHunter(player) && player.gameMode == GameMode.SPECTATOR && event.cause != PlayerTeleportEvent.TeleportCause.PLUGIN) {
+            event.isCancelled = true
+        }
     }
     
     /**
@@ -86,6 +99,15 @@ class PlayerListener(
         }
     }
     
-    // TODO 改变维度时，记录最后的位置
+    // 监听传送门传送事件。改变维度时，记录最后的位置。
+    @EventHandler
+    fun onPlayerChangeWorld(event: PlayerPortalEvent) {
+        if (console.stage != GameStage.PROCESSING) return
+        
+        // 我们用了Kotlin有了更装B的写法
+        event.from.world?.let {
+            console.recordLocAtPortal(event.player, event.from)
+        }
+    }
     
 }

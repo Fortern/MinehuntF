@@ -47,7 +47,12 @@ class Console {
     /**
      * 主世界
      */
-    private var overworld = Bukkit.getWorld("world")!!
+    val overworld = Bukkit.getWorld("world")!!
+    
+    /**
+     * 下界
+     */
+    val nether = Bukkit.getWorld("world_nether")!!
     
     /**
      * 速通者队伍
@@ -102,6 +107,16 @@ class Console {
     private lateinit var speedrunnerList: List<Player>
     
     /**
+     * 玩家离开主世界时最后的位置
+     */
+    private val playerLocInWorld: MutableMap<UUID, Location> = HashMap()
+    
+    /**
+     * 玩家离开下界时最后的位置
+     */
+    private val playerLocInNether: MutableMap<UUID, Location> = HashMap()
+    
+    /**
      * 猎人持有的指南针指向的速通者在speedrunnerList中的index
      */
     private val trackRunnerMap: MutableMap<String, Int> = ConcurrentHashMap()
@@ -133,12 +148,12 @@ class Console {
         itemMeta.addEnchant(Enchantment.VANISHING_CURSE, 1, false)
     }
     
+    // bukkit task start
+    
     /**
      * 猎人重生Task，保留这些引用方便在游戏结束时取消这些任务
      */
     private val hunterRespawnTasks: MutableMap<Player, BukkitTask> = HashMap()
-    
-    // bukkit task start
     
     /**
      * 游戏开始前的倒计时任务
@@ -354,7 +369,7 @@ class Console {
                 it.inventory.addItem(hunterCompass)
             }
             
-            // 自动更新指南针任务开始运行
+            // “自动更新指南针”任务开始运行
             compassRefreshTask = compassTask.runTaskTimer(Minehunt.instance(), 0, 20)
             
             // 通知速通者
@@ -468,6 +483,7 @@ class Console {
      * 处理玩家死亡
      */
     fun handlePlayerDeath(player: Player) {
+        Bukkit.getPlayer(player.uniqueId)
         if (isSpeedrunner(player)) {
             // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
@@ -514,6 +530,9 @@ class Console {
         ruleListObjective.displaySlot = DisplaySlot.SIDEBAR
     }
     
+    /**
+     * 更新规则时刷新对应规则项的后缀
+     */
     fun refreshEntry(ruleKey: RuleKey<*>) {
         val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
         teamForOneRule.suffix(
@@ -521,6 +540,18 @@ class Console {
                 Component.text(gameRules.getRuleValue(ruleKey).toString(), NamedTextColor.GREEN)
             )
         )
+    }
+    
+    /**
+     * 记录玩家进入传送门时的位置
+     */
+    fun recordLocAtPortal(player: Player, location: Location) {
+        val world = location.world
+        if (world.uid == overworld.uid) {
+            playerLocInWorld[player.uniqueId] = location
+        } else if (world.uid == nether.uid) {
+            playerLocInNether[player.uniqueId] = location
+        }
     }
     
     /**
