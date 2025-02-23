@@ -12,6 +12,7 @@ import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPortalEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerTeleportEvent
+import org.spigotmc.event.player.PlayerSpawnLocationEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 
@@ -25,8 +26,7 @@ class PlayerListener(
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
-        val stage = console.stage
-        if (stage == GameStage.PREPARING && console.beginningCountdown == null) {
+        if (console.stage == GameStage.PREPARING && console.beginningCountdown == null) {
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
             // 自动加入观察者队伍
@@ -40,15 +40,21 @@ class PlayerListener(
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
         val player = event.player
-        val stage = console.stage
-        if (stage == GameStage.PREPARING) {
+        if (console.stage == GameStage.PREPARING) {
             if (console.beginningCountdown != null && (console.isHunter(player) || console.isSpeedrunner(player))) {
                 console.interruptCountdownToStart()
             }
             // 将离开的玩家从team中移除
             player.scoreboard.teams.forEach { it.removePlayer(player) }
         }
-        
+    }
+    
+    /**
+     * 猎人重生时给予追踪指南针
+     */
+    @EventHandler
+    fun onPlayerSpawn(event: PlayerSpawnLocationEvent) {
+        console.giveCompassIfNeed(event.player)
     }
     
     /**

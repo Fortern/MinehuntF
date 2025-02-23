@@ -17,9 +17,10 @@ class MinehuntCommand(
     private val console: Console
 ) : TabExecutor {
     
-    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop")
+    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give")
     private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
     private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
+    private val items: List<String> = listOf("compass")
     
     private val helpMessages = listOf(
         Component.text("Minehunt v${Minehunt.instance().pluginMeta.version}", NamedTextColor.GREEN),
@@ -29,18 +30,20 @@ class MinehuntCommand(
             .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
         Component.text("/minehunt leave  ", NamedTextColor.GOLD)
             .append(Component.text("加入观察者阵营", NamedTextColor.WHITE)),
-        Component.text("/minehunt rule  ", NamedTextColor.GOLD)
+        Component.text("/minehunt rule <ruleKey>  ", NamedTextColor.GOLD)
             .append(Component.text("查看或修改游戏规则", NamedTextColor.WHITE)),
         Component.text("/minehunt start  ", NamedTextColor.GOLD)
             .append(Component.text("开始游戏", NamedTextColor.WHITE)),
         Component.text("/minehunt stop  ", NamedTextColor.GOLD)
-            .append(Component.text("进行中止游戏的投票", NamedTextColor.WHITE))
+            .append(Component.text("进行中止游戏的投票", NamedTextColor.WHITE)),
+        Component.text("/minehunt give  ", NamedTextColor.GOLD)
+            .append(Component.text("给予游戏中所需的特殊物品", NamedTextColor.WHITE)),
     )
     private val ruleHelpMessages = listOf(
         Component.text("/minehunt rule <ruleItem>  ", NamedTextColor.GREEN)
             .append(Component.text("查看一项规则的详情", NamedTextColor.WHITE)),
         Component.text("/minehunt rule <ruleItem> <value>  ", NamedTextColor.GREEN)
-            .append(Component.text("为一项规则设置新的值", NamedTextColor.WHITE))
+            .append(Component.text("为一项规则设置新的值", NamedTextColor.WHITE)),
     )
     
     /**
@@ -110,6 +113,10 @@ class MinehuntCommand(
             
             "stop" -> {
                 onStop(sender, flag)
+            }
+            
+            "give" -> {
+                onGive(sender, args, flag)
             }
             
             else -> {
@@ -302,13 +309,49 @@ class MinehuntCommand(
     }
     
     /**
+     * 给予玩家特殊物品
+     */
+    private fun onGive(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
+        // args[0] == give
+        if (args.size == 1) {
+            if (flag) {
+                sender.sendMessage("缺少参数")
+            }
+            return null
+        }
+        
+        val item = args[1]
+        if (flag) {
+            if (sender !is Player) {
+                sender.sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
+                return null
+            }
+            when (item) {
+                "compass" -> {
+                    console.giveCompassIfNeed(sender)
+                }
+                
+                else -> {
+                    sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
+                }
+            }
+            return null
+        } else {
+            if (args.size == 2) {
+                return items.filter { it.startsWith(item) }
+            }
+        }
+        return null
+    }
+    
+    /**
      * 发送规则详情
      */
     private fun sendRuleInfo(sender: CommandSender, ruleKey: RuleKey<*>) {
-        sender.sendMessage("游戏规则: " + ruleKey.name)
-        sender.sendMessage("描述: " + ruleKey.info)
-        sender.sendMessage("值类型: " + ruleKey.typeInfo)
-        sender.sendMessage("数值: " + console.gameRules.getRuleValue(ruleKey))
+        sender.sendMessage(Component.text("游戏规则: ${ruleKey.name}"))
+        sender.sendMessage(Component.text("描述: ${ruleKey.info}"))
+        sender.sendMessage(Component.text("值类型: ${ruleKey.typeInfo}"))
+        sender.sendMessage(Component.text("数值: ${console.gameRules.getRuleValue(ruleKey)}"))
     }
     
     /**

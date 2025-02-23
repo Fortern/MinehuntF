@@ -3,8 +3,6 @@ package xyz.fortern.minehunt
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.format.NamedTextColor
-import net.kyori.adventure.text.format.Style
-import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.title.Title
 import net.kyori.adventure.util.Ticks
 import org.bukkit.Bukkit
@@ -517,9 +515,9 @@ class Console {
             val speedrunner = Bukkit.getPlayer(uuid)
             if (!outPlayers.contains(uuid) && speedrunner != null) {
                 trackRunnerMap[hunter.uniqueId] = j
-                val location = speedrunner.location
                 // hunter操作指南针时立即刷新位置
                 refreshCompassTrack(hunter, speedrunner)
+                hunter.sendActionBar(Component.text("指向 ${speedrunner.name}"))
                 break
             }
         }
@@ -529,12 +527,11 @@ class Console {
      * 使hunter的指南针指向此时speedrunner的位置
      */
     private fun refreshCompassTrack(hunter: Player, speedrunner: Player) {
-        val items = hunter.inventory.all(hunterCompass)
-        items.firstNotNullOf { (_, itemStack) ->
-            val lore = itemStack.lore()
-            if (lore.isNullOrEmpty()) return@firstNotNullOf
+        val items = hunter.inventory.all(Material.COMPASS)
+        items.firstNotNullOfOrNull { (_, itemStack) ->
+            if (itemStack.lore().isNullOrEmpty()) return@firstNotNullOfOrNull
             
-            val component = lore[0]
+            val component = itemStack.lore()!![0]
             if (component is TextComponent && component.content() == compassFlag) {
                 // 让指南针指向某一个猎人
                 val meta = itemStack.itemMeta as CompassMeta
@@ -557,10 +554,6 @@ class Console {
             // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
             outPlayers.add(uuid)
-            // 给淘汰的玩家名字上加删除线
-            val playerListName = player.playerListName()
-            playerListName.style(Style.style(TextDecoration.STRIKETHROUGH))
-            player.playerListName(playerListName)
             // 如给所有hunter都淘汰，则游戏结束
             if (outPlayers.size == speedrunnerSet.size) {
                 Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable { end("Hunter") }, 0)
@@ -629,6 +622,15 @@ class Console {
             playerLocInWorld[player.uniqueId] = location
         } else if (world.uid == nether.uid) {
             playerLocInNether[player.uniqueId] = location
+        }
+    }
+    
+    /**
+     * 给予猎人追踪指南针
+     */
+    fun giveCompassIfNeed(player: Player) {
+        if (stage == GameStage.PROCESSING && isHunter(player)) {
+            player.give(hunterCompass)
         }
     }
     
