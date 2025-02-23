@@ -60,6 +60,7 @@ class PlayerListener(
         if (!console.isHunterCompass(itemStack)) return
         
         console.trackNextPlayer(event.player)
+        event.isCancelled = true
     }
     
     /**

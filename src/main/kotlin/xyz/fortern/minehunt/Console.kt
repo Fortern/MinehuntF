@@ -1,6 +1,7 @@
 package xyz.fortern.minehunt
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.TextComponent
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.Style
 import net.kyori.adventure.text.format.TextDecoration
@@ -128,7 +129,7 @@ class Console {
     /**
      * 猎人的指南针标记
      */
-    private val compassFlag = "Hunter Compass"
+    private val compassFlag = "compassFlag"
     
     /**
      * 猎人指南针物品
@@ -137,19 +138,21 @@ class Console {
      */
     private val hunterCompass: ItemStack = ItemStack(Material.COMPASS).apply {
         // 最大堆叠数设为1
+        val itemMeta = this.itemMeta
         itemMeta.setMaxStackSize(1)
         // 设置名称
-        itemMeta.displayName(Component.text(compassFlag, NamedTextColor.GOLD))
+        itemMeta.displayName(Component.text("Hunter Compass", NamedTextColor.GOLD))
         // 设置Lore
         itemMeta.lore(
             listOf(
                 // 第一个Lore用于标记这个指南针
-                Component.text("compassFlag", NamedTextColor.GRAY),
+                Component.text(compassFlag, NamedTextColor.GRAY),
                 Component.text("右键使用或扔出以切换目标", NamedTextColor.GRAY)
             )
         )
         // 添加附魔：消失诅咒
         itemMeta.addEnchant(Enchantment.VANISHING_CURSE, 1, false)
+        this.itemMeta = itemMeta
     }
     
     // bukkit task start
@@ -486,7 +489,13 @@ class Console {
     /**
      * 判断物品是否为猎人指南针
      */
-    fun isHunterCompass(itemStack: ItemStack) = hunterCompass == itemStack
+    fun isHunterCompass(itemStack: ItemStack): Boolean {
+        val lore = itemStack.lore()
+        if (lore.isNullOrEmpty()) return false
+        
+        val component = lore[0]
+        return component is TextComponent && component.content() == compassFlag
+    }
     
     /**
      * 让该玩家所追踪的目标切换到下一个
@@ -521,20 +530,18 @@ class Console {
      */
     private fun refreshCompassTrack(hunter: Player, speedrunner: Player) {
         val items = hunter.inventory.all(hunterCompass)
-        var flag = false
-        items.forEach inner@{ (k, v) ->
-            // 避免玩家身上有多个猎人指南针
-            if (flag) {
-                hunter.inventory.clear(k)
-                return@inner
-            }
-            val lore = v.lore()
-            if (!lore.isNullOrEmpty() && lore[0].equals(compassFlag)) {
-                flag = true
+        items.firstNotNullOf { (_, itemStack) ->
+            val lore = itemStack.lore()
+            if (lore.isNullOrEmpty()) return@firstNotNullOf
+            
+            val component = lore[0]
+            if (component is TextComponent && component.content() == compassFlag) {
                 // 让指南针指向某一个猎人
-                val meta = v.itemMeta as CompassMeta
+                val meta = itemStack.itemMeta as CompassMeta
                 meta.isLodestoneTracked = false
                 meta.lodestone = speedrunner.location
+                itemStack.itemMeta = meta
+                itemStack.amount = 1
             }
         }
     }
@@ -561,6 +568,7 @@ class Console {
         } else if (isHunter(player)) {
             // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
+            player.sendMessage(Component.text("等待重生"))
             hunterRespawnTasks[uuid] = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
                 player.gameMode = GameMode.SURVIVAL
                 hunterRespawnTasks.remove(uuid)
