@@ -32,3 +32,13 @@ kotlin {
 tasks.build {
     dependsOn("shadowJar")
 }
+
+tasks.named ("shadowJar") {
+    doLast {
+        copy {
+            from("build/libs")
+            include("*-all.jar")
+            into("run/plugins")
+        }
+    }
+}
