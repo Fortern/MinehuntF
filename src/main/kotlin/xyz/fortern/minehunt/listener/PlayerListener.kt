@@ -30,7 +30,7 @@ class PlayerListener(
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
             // 自动加入观察者队伍
-            console.spectatorTeam.addEntry(player.name)
+            console.spectatorTeam.addPlayer(player)
         }
     }
     
@@ -42,11 +42,11 @@ class PlayerListener(
         val player = event.player
         val stage = console.stage
         if (stage == GameStage.PREPARING) {
-            // 重置队伍信息
-            player.scoreboard.teams.forEach { it.removeEntry(player.name) }
             if (console.beginningCountdown != null && (console.isHunter(player) || console.isSpeedrunner(player))) {
                 console.interruptCountdownToStart()
             }
+            // 将离开的玩家从team中移除
+            player.scoreboard.teams.forEach { it.removePlayer(player) }
         }
         
     }
@@ -92,8 +92,7 @@ class PlayerListener(
      */
     @EventHandler
     fun onPlayerDeath(event: PlayerDeathEvent) {
-        val player = event.entity
-        console.handlePlayerDeath(player)
+        console.handlePlayerDeath(event.entity)
     }
     
     /**

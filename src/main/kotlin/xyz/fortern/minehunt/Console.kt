@@ -157,7 +157,7 @@ class Console {
     /**
      * 猎人重生Task，保留这些引用方便在游戏结束时取消这些任务
      */
-    private val hunterRespawnTasks: MutableMap<Player, BukkitTask> = HashMap()
+    private val hunterRespawnTasks: MutableMap<UUID, BukkitTask> = HashMap()
     
     /**
      * 游戏开始前的倒计时任务
@@ -182,16 +182,7 @@ class Console {
     
     // bukkit task end
     
-    companion object {
-        @JvmStatic
-        private lateinit var instance: Console
-        
-        @JvmStatic
-        fun getInstance() = instance
-    }
-    
     init {
-        instance = this
         initScoreboard()
         // 初始化 Minecraft 游戏规则
         overworld.worldBorder.size = 32.0
@@ -230,24 +221,24 @@ class Console {
     /**
      * 判断玩家是否为猎人
      */
-    fun isHunter(player: Player): Boolean = hunterSet.contains(player.uniqueId)
+    fun isHunter(player: Player): Boolean = hunterTeam.hasPlayer(player)
     
     /**
      * 判断是否为观察者
      */
-    fun isSpectator(player: Player): Boolean = spectatorSet.contains(player.uniqueId)
+    fun isSpectator(player: Player): Boolean = spectatorTeam.hasPlayer(player)
     
     /**
      * 判断是否为速通者
      */
-    fun isSpeedrunner(player: Player): Boolean = speedrunnerSet.contains(player.uniqueId)
+    fun isSpeedrunner(player: Player): Boolean = speedrunnerTeam.hasPlayer(player)
     
     /**
      * 加入猎人阵营
      */
     fun joinHunter(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
-            hunterTeam.addEntry(player.name)
+            hunterTeam.addPlayer(player)
             player.sendMessage(Component.text("你已加入[猎人]"))
         }
     }
@@ -257,7 +248,7 @@ class Console {
      */
     fun joinSpeedrunner(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
-            speedrunnerTeam.addEntry(player.name)
+            speedrunnerTeam.addPlayer(player)
             player.sendMessage(Component.text("你已加入[速通者]"))
         }
     }
@@ -267,7 +258,7 @@ class Console {
      */
     fun joinSpectator(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
-            spectatorTeam.addEntry(player.name)
+            spectatorTeam.addPlayer(player)
             player.sendMessage(Component.text("你已加入[观众]"))
         }
     }
@@ -329,16 +320,15 @@ class Console {
         if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
         
         // 修改游戏规则
-        val world = Bukkit.getWorld("world")!!
-        world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, true)
-        world.setGameRule(GameRule.DO_WEATHER_CYCLE, true)
-        world.setGameRule(GameRule.DO_MOB_SPAWNING, true)
-        world.setGameRule(GameRule.KEEP_INVENTORY, false)
-        world.setGameRule(GameRule.SPAWN_RADIUS, 10)
-        world.difficulty = Difficulty.HARD
-        overworld.worldBorder.size = 9999999.0
+        overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, true)
+        overworld.setGameRule(GameRule.DO_WEATHER_CYCLE, true)
+        overworld.setGameRule(GameRule.DO_MOB_SPAWNING, true)
+        overworld.setGameRule(GameRule.KEEP_INVENTORY, false)
+        overworld.setGameRule(GameRule.SPAWN_RADIUS, 10)
+        overworld.difficulty = Difficulty.HARD
+        this.overworld.worldBorder.size = 9999999.0
         
-        val spawnLocation = world.spawnLocation
+        val spawnLocation = overworld.spawnLocation
         
         // 重置所有玩家状态
         Bukkit.getOnlinePlayers().forEach {
@@ -361,10 +351,14 @@ class Console {
         hunterTeam.entries.forEach { entry ->
             Bukkit.getPlayer(entry)?.let {
                 hunterSet.add(it.uniqueId)
-                it.teleport(Location(world, 0.0, -64.0, 0.0))
+                it.teleport(Location(overworld, 0.0, -64.0, 0.0))
                 trackRunnerMap[it.uniqueId] = 0
             }
         }
+        
+        val pvp = gameRules.getRuleValue(RuleKey.FRIENDLY_FIRE)
+        speedrunnerTeam.setAllowFriendlyFire(pvp)
+        hunterTeam.setAllowFriendlyFire(pvp)
         
         // 创建指南针更新任务
         val compassTask = object : BukkitRunnable() {
@@ -398,8 +392,10 @@ class Console {
             speedrunnerSet.forEach {
                 Bukkit.getPlayer(it)?.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED))
             }
+            hunterSpawnCD = null
         }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
         
+        scoreboard.getObjective("rule-list")!!.displaySlot = null
         stage = GameStage.PROCESSING
     }
     
@@ -460,7 +456,13 @@ class Console {
      * 结束处理
      */
     fun end(winner: String?) {
+        if (stage != GameStage.PROCESSING) return
+        
         stage = GameStage.OVER
+        hunterSpawnCD?.cancel()
+        hunterSpawnCD = null
+        compassRefreshTask?.cancel()
+        compassRefreshTask = null
         // 所有人设为生存模式
         Bukkit.getOnlinePlayers().forEach {
             it.sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
@@ -476,6 +478,9 @@ class Console {
             it.value.cancel()
         }
         hunterRespawnTasks.clear()
+        // 有仇的报仇
+        speedrunnerTeam.setAllowFriendlyFire(true)
+        hunterTeam.setAllowFriendlyFire(true)
     }
     
     /**
@@ -540,27 +545,26 @@ class Console {
     fun handlePlayerDeath(player: Player) {
         if (stage != GameStage.PROCESSING) return
         
-        Bukkit.getPlayer(player.uniqueId)
+        val uuid = player.uniqueId
         if (isSpeedrunner(player)) {
             // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
-            outPlayers.add(player.uniqueId)
+            outPlayers.add(uuid)
             // 给淘汰的玩家名字上加删除线
             val playerListName = player.playerListName()
             playerListName.style(Style.style(TextDecoration.STRIKETHROUGH))
             player.playerListName(playerListName)
             // 如给所有hunter都淘汰，则游戏结束
             if (outPlayers.size == speedrunnerSet.size) {
-                end("hunter")
+                Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable { end("Hunter") }, 0)
             }
         } else if (isHunter(player)) {
             // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
-            val task = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
+            hunterRespawnTasks[uuid] = Bukkit.getScheduler().runTaskLater(Minehunt.instance(), Runnable {
                 player.gameMode = GameMode.SURVIVAL
-                hunterRespawnTasks.remove(player)
-            }, 20)
-            hunterRespawnTasks[player] = task
+                hunterRespawnTasks.remove(uuid)
+            }, gameRules.getRuleValue(RuleKey.HUNTER_RESPAWN_CD) * 20L)
         }
     }
     
