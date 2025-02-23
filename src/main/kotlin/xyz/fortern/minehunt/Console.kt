@@ -5,6 +5,7 @@ import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.Style
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.title.Title
+import net.kyori.adventure.util.Ticks
 import org.bukkit.Bukkit
 import org.bukkit.Difficulty
 import org.bukkit.GameMode
@@ -245,21 +246,30 @@ class Console {
      * 加入猎人阵营
      */
     fun joinHunter(player: Player) {
-        hunterTeam.addEntry(player.name)
+        if (stage == GameStage.PREPARING && beginningCountdown == null) {
+            hunterTeam.addEntry(player.name)
+            player.sendMessage(Component.text("你已加入[猎人]"))
+        }
     }
     
     /**
      * 加入速通者阵营
      */
     fun joinSpeedrunner(player: Player) {
-        speedrunnerTeam.addEntry(player.name)
+        if (stage == GameStage.PREPARING && beginningCountdown == null) {
+            speedrunnerTeam.addEntry(player.name)
+            player.sendMessage(Component.text("你已加入[速通者]"))
+        }
     }
     
     /**
      * 加入观察者阵营
      */
     fun joinSpectator(player: Player) {
-        spectatorTeam.addEntry(player.name)
+        if (stage == GameStage.PREPARING && beginningCountdown == null) {
+            spectatorTeam.addEntry(player.name)
+            player.sendMessage(Component.text("你已加入[观众]"))
+        }
     }
     
     /**
@@ -286,7 +296,8 @@ class Console {
                     Bukkit.getOnlinePlayers().forEach {
                         val title = Title.title(
                             Component.text(countdown.toString(), NamedTextColor.DARK_PURPLE),
-                            Component.text("开始倒计时", NamedTextColor.GRAY)
+                            Component.text("开始倒计时", NamedTextColor.GRAY),
+                            Title.Times.times(Ticks.duration(5), Ticks.duration(20), Ticks.duration(5))
                         )
                         it.showTitle(title)
                     }
@@ -311,6 +322,10 @@ class Console {
      * 游戏阶段由 PREPARING 变为 PROCESSING
      */
     private fun start() {
+        // 速通者更改为生存模式，并加入speedrunnerList
+        speedrunnerTeam.entries.forEach { entry ->
+            Bukkit.getPlayer(entry)?.let { speedrunnerSet.add(it.uniqueId) }
+        }
         if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
         
         // 修改游戏规则
@@ -321,6 +336,7 @@ class Console {
         world.setGameRule(GameRule.KEEP_INVENTORY, false)
         world.setGameRule(GameRule.SPAWN_RADIUS, 10)
         world.difficulty = Difficulty.HARD
+        overworld.worldBorder.size = 9999999.0
         
         val spawnLocation = world.spawnLocation
         
@@ -337,12 +353,9 @@ class Console {
         
         // 速通者更改为生存模式，并加入speedrunnerList
         speedrunnerTeam.entries.forEach { entry ->
-            Bukkit.getPlayer(entry)?.let {
-                speedrunnerSet.add(it.uniqueId)
-                it.gameMode = GameMode.SURVIVAL
-            }
+            Bukkit.getPlayer(entry)?.let { it.gameMode = GameMode.SURVIVAL }
         }
-        speedrunnerSet.toList()
+        speedrunnerList = speedrunnerSet.toList()
         
         // 将猎人传送到世界底部，且指南针开始有所指向
         hunterTeam.entries.forEach { entry ->
@@ -387,6 +400,7 @@ class Console {
             }
         }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
         
+        stage = GameStage.PROCESSING
     }
     
     /**
@@ -536,7 +550,7 @@ class Console {
             playerListName.style(Style.style(TextDecoration.STRIKETHROUGH))
             player.playerListName(playerListName)
             // 如给所有hunter都淘汰，则游戏结束
-            if (outPlayers.size == hunterSet.size) {
+            if (outPlayers.size == speedrunnerSet.size) {
                 end("hunter")
             }
         } else if (isHunter(player)) {

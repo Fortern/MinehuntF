@@ -29,8 +29,6 @@ class PlayerListener(
         if (stage == GameStage.PREPARING && console.beginningCountdown == null) {
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
-            // 重置队伍信息
-            player.scoreboard.teams.forEach { it.removeEntry(player.name) }
             // 自动加入观察者队伍
             console.spectatorTeam.addEntry(player.name)
         }
@@ -40,15 +38,17 @@ class PlayerListener(
      * 参与游戏的玩家在倒计时阶段退出，则中断倒计时
      */
     @EventHandler
-    fun onPlayerJoin(event: PlayerQuitEvent) {
+    fun onPlayerQuit(event: PlayerQuitEvent) {
         val player = event.player
         val stage = console.stage
-        if (stage == GameStage.PREPARING
-            && console.beginningCountdown != null
-            && (console.isHunter(player) || console.isSpeedrunner(player))
-        ) {
-            console.interruptCountdownToStart()
+        if (stage == GameStage.PREPARING) {
+            // 重置队伍信息
+            player.scoreboard.teams.forEach { it.removeEntry(player.name) }
+            if (console.beginningCountdown != null && (console.isHunter(player) || console.isSpeedrunner(player))) {
+                console.interruptCountdownToStart()
+            }
         }
+        
     }
     
     /**

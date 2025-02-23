@@ -17,7 +17,7 @@ class MinehuntCommand(
     private val console: Console
 ) : TabExecutor {
     
-    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "stat", "stop")
+    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop")
     private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
     private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
     
@@ -276,9 +276,12 @@ class MinehuntCommand(
     private fun onStart(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
             if (console.stage == Console.GameStage.PREPARING) {
-                console.tryStart()
+                val result = console.tryStart()
+                if (result.isNotEmpty()) {
+                    sender.sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))
+                }
             } else {
-                sender.sendMessage("游戏已经开始或已经结束")
+                sender.sendMessage(Component.text("游戏已经开始或已经结束"))
             }
         }
         return null
