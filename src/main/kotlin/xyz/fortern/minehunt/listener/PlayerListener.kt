@@ -10,6 +10,7 @@ import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPortalEvent
+import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerTeleportEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
@@ -32,15 +33,21 @@ class PlayerListener(
             player.scoreboard.teams.forEach { it.removeEntry(player.name) }
             // 自动加入观察者队伍
             console.spectatorTeam.addEntry(player.name)
-        } else {
-            // 在倒计时或进行阶段，玩家自动加入各自的Team
-            if (console.isSpeedrunner(player)) {
-                console.speedrunnerTeam.addEntry(player.name)
-            } else if (console.isHunter(player)) {
-                console.hunterTeam.addEntry(player.name)
-            } else {
-                console.joinSpectator(player)
-            }
+        }
+    }
+    
+    /**
+     * 参与游戏的玩家在倒计时阶段退出，则中断倒计时
+     */
+    @EventHandler
+    fun onPlayerJoin(event: PlayerQuitEvent) {
+        val player = event.player
+        val stage = console.stage
+        if (stage == GameStage.PREPARING
+            && console.beginningCountdown != null
+            && (console.isHunter(player) || console.isSpeedrunner(player))
+        ) {
+            console.interruptCountdownToStart()
         }
     }
     
@@ -99,7 +106,9 @@ class PlayerListener(
         }
     }
     
-    // 监听传送门传送事件。改变维度时，记录最后的位置。
+    /**
+     * 监听传送门传送事件。改变维度时，记录最后的位置。
+     */
     @EventHandler
     fun onPlayerChangeWorld(event: PlayerPortalEvent) {
         if (console.stage != GameStage.PROCESSING) return

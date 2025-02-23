@@ -132,6 +132,12 @@ class MinehuntCommand(
      * 玩家加入队伍
      */
     private fun onJoin(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
+        if (console.stage != Console.GameStage.PREPARING && console.beginningCountdown != null) {
+            if (flag) {
+                sender.sendMessage(Component.text("只能在准备阶段加入队伍", NamedTextColor.RED))
+            }
+            return null
+        }
         if (args.size == 1) {
             if (flag) {
                 sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))

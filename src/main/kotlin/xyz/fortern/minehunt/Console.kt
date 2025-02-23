@@ -2,6 +2,8 @@ package xyz.fortern.minehunt
 
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.text.format.Style
+import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
 import org.bukkit.Difficulty
@@ -17,6 +19,7 @@ import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Criteria
 import org.bukkit.scoreboard.DisplaySlot
+import org.bukkit.scoreboard.RenderType
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
@@ -164,8 +167,7 @@ class Console {
     /**
      * 猎人出生倒计时
      */
-    var hunterSpawnCD: BukkitTask? = null
-        private set
+    private var hunterSpawnCD: BukkitTask? = null
     
     /**
      * 指南针刷新任务
@@ -189,7 +191,7 @@ class Console {
     
     init {
         instance = this
-        setRuleScoreboard()
+        initScoreboard()
         // 初始化 Minecraft 游戏规则
         overworld.worldBorder.size = 32.0
         overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
@@ -207,54 +209,57 @@ class Console {
         hunterTeam = scoreboard.getTeam("hunter") ?: scoreboard.registerNewTeam("hunter")
         spectatorTeam = scoreboard.getTeam("spectator") ?: scoreboard.registerNewTeam("spectator")
         
-        speedrunnerTeam.entries.forEach { speedrunnerTeam.removeEntries(it) }
-        hunterTeam.entries.forEach { hunterTeam.removeEntries(it) }
-        spectatorTeam.entries.forEach { spectatorTeam.removeEntries(it) }
+        speedrunnerTeam.let { t ->
+            t.color(NamedTextColor.BLUE)
+            t.prefix(Component.text("[速通者] ", NamedTextColor.BLUE))
+            t.entries.forEach { speedrunnerTeam.removeEntries(it) }
+        }
+        hunterTeam.let { t ->
+            t.color(NamedTextColor.RED)
+            t.prefix(Component.text("[猎人] ", NamedTextColor.RED))
+            t.entries.forEach { hunterTeam.removeEntries(it) }
+        }
+        spectatorTeam.let { t ->
+            t.color(NamedTextColor.GRAY)
+            t.prefix(Component.text("[观众] ", NamedTextColor.GRAY))
+            t.entries.forEach { spectatorTeam.removeEntries(it) }
+        }
     }
     
     /**
      * 判断玩家是否为猎人
      */
-    fun isHunter(player: Player) = hunterSet.contains(player.uniqueId)
+    fun isHunter(player: Player): Boolean = hunterSet.contains(player.uniqueId)
     
     /**
      * 判断是否为观察者
      */
-    fun isSpectator(player: Player) = spectatorSet.contains(player.uniqueId)
+    fun isSpectator(player: Player): Boolean = spectatorSet.contains(player.uniqueId)
     
     /**
      * 判断是否为速通者
      */
-    fun isSpeedrunner(player: Player) = speedrunnerSet.contains(player.uniqueId)
+    fun isSpeedrunner(player: Player): Boolean = speedrunnerSet.contains(player.uniqueId)
     
     /**
      * 加入猎人阵营
      */
     fun joinHunter(player: Player) {
-        val uuid = player.uniqueId
-        speedrunnerSet.remove(uuid)
-        spectatorSet.remove(uuid)
-        hunterSet.add(uuid)
+        hunterTeam.addEntry(player.name)
     }
     
     /**
      * 加入速通者阵营
      */
     fun joinSpeedrunner(player: Player) {
-        val uuid = player.uniqueId
-        hunterSet.remove(uuid)
-        spectatorSet.remove(uuid)
-        speedrunnerSet.add(uuid)
+        speedrunnerTeam.addEntry(player.name)
     }
     
     /**
      * 加入观察者阵营
      */
     fun joinSpectator(player: Player) {
-        val uuid = player.uniqueId
-        hunterSet.remove(uuid)
-        speedrunnerSet.remove(uuid)
-        spectatorSet.add(uuid)
+        spectatorTeam.addEntry(player.name)
     }
     
     /**
@@ -295,6 +300,11 @@ class Console {
         }, 0, 20)
     }
     
+    fun interruptCountdownToStart() {
+        beginningCountdown?.cancel()
+        beginningCountdown = null
+    }
+    
     /**
      * 开始游戏
      *
@@ -326,13 +336,21 @@ class Console {
         }
         
         // 速通者更改为生存模式，并加入speedrunnerList
-        speedrunnerSet.forEach { Bukkit.getPlayer(it)?.gameMode = GameMode.SURVIVAL }
-        speedrunnerList = speedrunnerSet.toList()
+        speedrunnerTeam.entries.forEach { entry ->
+            Bukkit.getPlayer(entry)?.let {
+                speedrunnerSet.add(it.uniqueId)
+                it.gameMode = GameMode.SURVIVAL
+            }
+        }
+        speedrunnerSet.toList()
         
         // 将猎人传送到世界底部，且指南针开始有所指向
-        hunterSet.forEach {
-            Bukkit.getPlayer(it)?.teleport(Location(world, 0.0, -64.0, 0.0))
-            trackRunnerMap[it] = 0
+        hunterTeam.entries.forEach { entry ->
+            Bukkit.getPlayer(entry)?.let {
+                hunterSet.add(it.uniqueId)
+                it.teleport(Location(world, 0.0, -64.0, 0.0))
+                trackRunnerMap[it.uniqueId] = 0
+            }
         }
         
         // 创建指南针更新任务
@@ -342,24 +360,9 @@ class Console {
                     val hunter = Bukkit.getPlayer(it) ?: return@forEach
                     val i = (trackRunnerMap[it] ?: return@forEach) % speedrunnerList.size
                     // hunter 正在追踪的 speedrunner
+                    // 这意味着如果速通者掉线，指南针将指向掉线时的位置
                     val speedrunner = Bukkit.getPlayer(speedrunnerList[i]) ?: return@forEach
-                    val items = hunter.inventory.all(hunterCompass)
-                    var flag = false
-                    items.forEach inner@{ (k, v) ->
-                        // 避免玩家身上有多个猎人指南针
-                        if (flag) {
-                            hunter.inventory.clear(k)
-                            return@inner
-                        }
-                        val lore = v.lore()
-                        if (!lore.isNullOrEmpty() && lore[0].equals(compassFlag)) {
-                            flag = true
-                            // 让指南针指向某一个猎人
-                            val meta = v.itemMeta as CompassMeta
-                            meta.isLodestoneTracked = false
-                            meta.lodestone = speedrunner.location
-                        }
-                    }
+                    refreshCompassTrack(hunter, speedrunner)
                 }
             }
         }
@@ -379,7 +382,9 @@ class Console {
             compassRefreshTask = compassTask.runTaskTimer(Minehunt.instance(), 0, 20)
             
             // 通知速通者
-            speedrunnerSet.forEach { Bukkit.getPlayer(it)?.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED)) }
+            speedrunnerSet.forEach {
+                Bukkit.getPlayer(it)?.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED))
+            }
         }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
         
     }
@@ -467,19 +472,50 @@ class Console {
     /**
      * 让该玩家所追踪的目标切换到下一个
      */
-    fun trackNextPlayer(player: Player) {
+    fun trackNextPlayer(hunter: Player) {
         if (stage != GameStage.PROCESSING) return
-        val i = trackRunnerMap[player.uniqueId] ?: return
+        val i = trackRunnerMap[hunter.uniqueId] ?: return
         if (speedrunnerList.isEmpty()) return
         
         var j = i
         while (true) {
             j++
             j %= speedrunnerList.size
-            val speedrunner = speedrunnerList[i]
-            if (!outPlayers.contains(speedrunner) && Bukkit.getPlayer(speedrunner) != null || i == j) {
-                trackRunnerMap[player.uniqueId] = j
+            if (i == j) {
+                // 极端情况，所有速通者都掉线了
                 break
+            }
+            val uuid = speedrunnerList[j]
+            val speedrunner = Bukkit.getPlayer(uuid)
+            if (!outPlayers.contains(uuid) && speedrunner != null) {
+                trackRunnerMap[hunter.uniqueId] = j
+                val location = speedrunner.location
+                // hunter操作指南针时立即刷新位置
+                refreshCompassTrack(hunter, speedrunner)
+                break
+            }
+        }
+    }
+    
+    /**
+     * 使hunter的指南针指向此时speedrunner的位置
+     */
+    private fun refreshCompassTrack(hunter: Player, speedrunner: Player) {
+        val items = hunter.inventory.all(hunterCompass)
+        var flag = false
+        items.forEach inner@{ (k, v) ->
+            // 避免玩家身上有多个猎人指南针
+            if (flag) {
+                hunter.inventory.clear(k)
+                return@inner
+            }
+            val lore = v.lore()
+            if (!lore.isNullOrEmpty() && lore[0].equals(compassFlag)) {
+                flag = true
+                // 让指南针指向某一个猎人
+                val meta = v.itemMeta as CompassMeta
+                meta.isLodestoneTracked = false
+                meta.lodestone = speedrunner.location
             }
         }
     }
@@ -488,11 +524,18 @@ class Console {
      * 处理玩家死亡
      */
     fun handlePlayerDeath(player: Player) {
+        if (stage != GameStage.PROCESSING) return
+        
         Bukkit.getPlayer(player.uniqueId)
         if (isSpeedrunner(player)) {
             // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
             outPlayers.add(player.uniqueId)
+            // 给淘汰的玩家名字上加删除线
+            val playerListName = player.playerListName()
+            playerListName.style(Style.style(TextDecoration.STRIKETHROUGH))
+            player.playerListName(playerListName)
+            // 如给所有hunter都淘汰，则游戏结束
             if (outPlayers.size == hunterSet.size) {
                 end("hunter")
             }
@@ -507,11 +550,16 @@ class Console {
         }
     }
     
-    private fun setRuleScoreboard() {
+    private fun initScoreboard() {
         //清除旧的计分板信息
         scoreboard.teams.forEach { it.unregister() }
-        val objective = scoreboard.getObjective("rule-list")
-        objective?.unregister()
+        scoreboard.getObjective("rule-list")?.unregister()
+        scoreboard.getObjective("players")?.unregister()
+        
+        scoreboard.registerNewObjective("players", Criteria.HEALTH, null).let {
+            it.displaySlot = DisplaySlot.PLAYER_LIST
+            it.renderType = RenderType.HEARTS
+        }
         
         //设置新的计分板信息
         val ruleListObjective = scoreboard.registerNewObjective(
@@ -531,7 +579,6 @@ class Console {
                 Component.text(": ").append(Component.text(entry.value.toString(), NamedTextColor.GREEN))
             )
         }
-        
         ruleListObjective.displaySlot = DisplaySlot.SIDEBAR
     }
     

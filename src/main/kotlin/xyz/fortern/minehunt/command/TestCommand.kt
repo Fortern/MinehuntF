@@ -59,6 +59,12 @@ class TestCommand : CommandExecutor {
                     )
                 }
             }
+            // 调试
+            "list_name" -> {
+                if (sender is Player && sender.name == "Fortern") {
+                    sender.sendMessage(sender.playerListName)
+                }
+            }
         }
         return true
     }
