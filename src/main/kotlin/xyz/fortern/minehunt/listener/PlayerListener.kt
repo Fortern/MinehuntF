@@ -26,11 +26,11 @@ class PlayerListener(
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
-        if (console.stage == GameStage.PREPARING && console.beginningCountdown == null) {
+        if (console.stage == GameStage.PREPARING) {
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
             // 自动加入观察者队伍
-            console.audienceTeam.addPlayer(player)
+            console.joinAudience(player)
         }
     }
     

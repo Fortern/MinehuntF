@@ -110,12 +110,12 @@ class Console {
     private lateinit var speedrunnerList: List<UUID>
     
     /**
-     * 玩家离开主世界时最后的位置
+     * 速通者离开主世界时最后的位置
      */
     private val playerLocInWorld: MutableMap<UUID, Location> = HashMap()
     
     /**
-     * 玩家离开下界时最后的位置
+     * 速通者离开下界时最后的位置
      */
     private val playerLocInNether: MutableMap<UUID, Location> = HashMap()
     
@@ -258,7 +258,7 @@ class Console {
      * 加入观众阵营
      */
     fun joinAudience(player: Player) {
-        if (stage == GameStage.PREPARING && beginningCountdown == null) {
+        if (stage == GameStage.PREPARING) {
             audienceTeam.addPlayer(player)
             player.sendMessage(Component.text("你已加入[观众]"))
         }
@@ -442,7 +442,7 @@ class Console {
         }
         votingEndMap[player.uniqueId] = true
         votingCount++
-        player.sendMessage(Component.text("voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
+        player.sendMessage(Component.text("Voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
         if (votingCount != votingEndMap.size) {
             return
         }
@@ -536,7 +536,15 @@ class Console {
                 // 让指南针指向某一个猎人
                 val meta = itemStack.itemMeta as CompassMeta
                 meta.isLodestoneTracked = false
-                meta.lodestone = speedrunner.location
+                if (hunter.world.uid == speedrunner.world.uid) {
+                    meta.lodestone = speedrunner.location
+                } else if (hunter.world.uid == overworld.uid) {
+                    meta.lodestone = playerLocInWorld[speedrunner.uniqueId]
+                } else if (hunter.world.uid == nether.uid) {
+                    meta.lodestone = playerLocInNether[speedrunner.uniqueId]
+                } else {
+                    meta.lodestone = null
+                }
                 itemStack.itemMeta = meta
                 itemStack.amount = 1
             }
@@ -630,7 +638,19 @@ class Console {
      */
     fun giveCompassIfNeed(player: Player) {
         if (stage == GameStage.PROCESSING && isHunter(player)) {
-            player.give(hunterCompass)
+            val items = player.inventory.all(Material.COMPASS)
+            var have = false
+            for (item in items) {
+                if (item.value.lore().isNullOrEmpty()) continue
+                val component = item.value.lore()!![0]
+                if (component is TextComponent && component.content() == compassFlag) {
+                    have = true
+                    break
+                }
+            }
+            if (!have) {
+                player.give(hunterCompass)
+            }
         }
     }
     
