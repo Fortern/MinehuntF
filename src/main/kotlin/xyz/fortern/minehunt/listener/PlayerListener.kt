@@ -30,7 +30,7 @@ class PlayerListener(
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
             // 自动加入观察者队伍
-            console.spectatorTeam.addPlayer(player)
+            console.audienceTeam.addPlayer(player)
         }
     }
     

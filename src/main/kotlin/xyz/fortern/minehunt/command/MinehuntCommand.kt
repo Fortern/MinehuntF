@@ -18,7 +18,7 @@ class MinehuntCommand(
 ) : TabExecutor {
     
     private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give")
-    private val teams: List<String> = listOf("hunter", "speedrunner", "spectator")
+    private val teams: List<String> = listOf("hunter", "speedrunner", "audience")
     private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
     private val items: List<String> = listOf("compass")
     
@@ -26,7 +26,7 @@ class MinehuntCommand(
         Component.text("Minehunt v${Minehunt.instance().pluginMeta.version}", NamedTextColor.GREEN),
         Component.text("/minehunt help  ", NamedTextColor.GOLD)
             .append(Component.text("帮助信息", NamedTextColor.WHITE)),
-        Component.text("/minehunt join (hunter|speedrunner|spectator)  ", NamedTextColor.GOLD)
+        Component.text("/minehunt join (hunter|speedrunner|audience)  ", NamedTextColor.GOLD)
             .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
         Component.text("/minehunt leave  ", NamedTextColor.GOLD)
             .append(Component.text("加入观察者阵营", NamedTextColor.WHITE)),
@@ -166,8 +166,8 @@ class MinehuntCommand(
                     console.joinSpeedrunner(sender)
                 }
                 
-                "spectator" -> {
-                    console.joinSpectator(sender)
+                "audience" -> {
+                    console.joinAudience(sender)
                 }
                 
                 else -> {
@@ -192,7 +192,7 @@ class MinehuntCommand(
             if (sender !is Player) {
                 sender.sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
             } else {
-                console.joinSpectator(sender)
+                console.joinAudience(sender)
             }
         }
         return null

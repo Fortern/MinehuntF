@@ -68,9 +68,9 @@ class Console {
     val hunterTeam: Team
     
     /**
-     * 观察者队伍
+     * 观众队伍
      */
-    val spectatorTeam: Team
+    val audienceTeam: Team
     
     // 玩家退出游戏后会自动离开Team，所以我们维护自己的玩家集合
     
@@ -85,9 +85,9 @@ class Console {
     private val hunterSet: MutableSet<UUID> = HashSet()
     
     /**
-     * 旁观者玩家集合
+     * 观众玩家集合
      */
-    private val spectatorSet: MutableSet<UUID> = HashSet()
+    private val audienceSet: MutableSet<UUID> = HashSet()
     
     /**
      * 淘汰玩家集合
@@ -200,7 +200,7 @@ class Console {
         
         speedrunnerTeam = scoreboard.getTeam("speedrunner") ?: scoreboard.registerNewTeam("speedrunner")
         hunterTeam = scoreboard.getTeam("hunter") ?: scoreboard.registerNewTeam("hunter")
-        spectatorTeam = scoreboard.getTeam("spectator") ?: scoreboard.registerNewTeam("spectator")
+        audienceTeam = scoreboard.getTeam("spectator") ?: scoreboard.registerNewTeam("spectator")
         
         speedrunnerTeam.let { t ->
             t.color(NamedTextColor.BLUE)
@@ -212,10 +212,10 @@ class Console {
             t.prefix(Component.text("[猎人] ", NamedTextColor.RED))
             t.entries.forEach { hunterTeam.removeEntries(it) }
         }
-        spectatorTeam.let { t ->
+        audienceTeam.let { t ->
             t.color(NamedTextColor.GRAY)
             t.prefix(Component.text("[观众] ", NamedTextColor.GRAY))
-            t.entries.forEach { spectatorTeam.removeEntries(it) }
+            t.entries.forEach { audienceTeam.removeEntries(it) }
         }
     }
     
@@ -225,9 +225,9 @@ class Console {
     fun isHunter(player: Player): Boolean = hunterTeam.hasPlayer(player)
     
     /**
-     * 判断是否为观察者
+     * 判断是否为观众
      */
-    fun isSpectator(player: Player): Boolean = spectatorTeam.hasPlayer(player)
+    fun isSpectator(player: Player): Boolean = audienceTeam.hasPlayer(player)
     
     /**
      * 判断是否为速通者
@@ -255,11 +255,11 @@ class Console {
     }
     
     /**
-     * 加入观察者阵营
+     * 加入观众阵营
      */
-    fun joinSpectator(player: Player) {
+    fun joinAudience(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
-            spectatorTeam.addPlayer(player)
+            audienceTeam.addPlayer(player)
             player.sendMessage(Component.text("你已加入[观众]"))
         }
     }
