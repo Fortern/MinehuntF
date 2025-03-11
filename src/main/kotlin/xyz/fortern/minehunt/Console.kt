@@ -72,7 +72,7 @@ class Console {
      */
     val audienceTeam: Team
     
-    // 玩家退出游戏后会自动离开Team，所以我们维护自己的玩家集合
+    // 我们维护自己的玩家集合
     
     /**
      * 速通者列表
@@ -418,7 +418,10 @@ class Console {
                 voteTask = null
                 votingEndMap.clear()
                 votingCount = 0
-            }, 60)
+                Bukkit.getOnlinePlayers().forEach {
+                    it.sendMessage(Component.text("票数不足，游戏继续。"))
+                }
+            }, 60 * 20L)
             // 统计参与投票的玩家
             speedrunnerSet.forEach {
                 Bukkit.getPlayer(it) ?: return@forEach

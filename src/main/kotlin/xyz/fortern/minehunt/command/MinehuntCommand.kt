@@ -55,6 +55,7 @@ class MinehuntCommand(
         label: String,
         args: Array<out String>
     ): Boolean {
+        // onCommand接受到的参数中没有空字符串
         handlerCommand(sender, args.toList(), true)
         return true
     }
@@ -82,7 +83,7 @@ class MinehuntCommand(
      * @param args 命令的参数列表，除最后一条前面的每一条都应当是非空的
      */
     private fun handlerCommand(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
-        if (args.isEmpty() || args[0] == "" || args[0] == "help" || args[0] == "?")
+        if (args.isEmpty())
             return if (flag) {
                 sendHelp(sender)
                 null
@@ -332,7 +333,7 @@ class MinehuntCommand(
                 }
                 
                 else -> {
-                    sender.sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
+                    sender.sendMessage(Component.text("输入正确的物品名称", NamedTextColor.RED))
                 }
             }
             return null
