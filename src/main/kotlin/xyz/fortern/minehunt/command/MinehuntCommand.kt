@@ -283,7 +283,7 @@ class MinehuntCommand(
      */
     private fun onStart(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
-            if (console.stage == Console.GameStage.PREPARING) {
+            if (console.stage == Console.GameStage.PREPARING && console.beginningCountdown == null) {
                 val result = console.tryStart()
                 if (result.isNotEmpty()) {
                     sender.sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))

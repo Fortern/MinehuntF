@@ -23,10 +23,10 @@ class Minehunt : JavaPlugin() {
         instance = this
         val console = Console()
         
-        // 注册命令
+        // 注册事件
         Bukkit.getPluginManager().registerEvents(PlayerListener(console), this)
         
-        // 注册事件
+        // 注册命令
         Bukkit.getPluginCommand("test")!!.setExecutor(TestCommand())
         Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console))
         
