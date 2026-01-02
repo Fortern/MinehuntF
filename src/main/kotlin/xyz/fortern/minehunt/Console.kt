@@ -271,6 +271,25 @@ class Console(
     }
 
     /**
+     * 重进游戏
+     */
+    fun reJoinInGame(player: Player) {
+        if (stage != GameStage.PROCESSING) {
+            return
+        }
+        if (hunterSet.contains(player.uniqueId)) {
+            hunterTeam.addEntry(player.name)
+            adventure.player(player).sendMessage(Component.text("你已加入[猎人]"))
+        } else if (speedrunnerSet.contains(player.uniqueId)) {
+            speedrunnerTeam.addEntry(player.name)
+            adventure.player(player).sendMessage(Component.text("你已加入[速通者]"))
+        } else {
+            audienceTeam.addEntry(player.name)
+            adventure.player(player).sendMessage(Component.text("你已加入[观众]"))
+        }
+    }
+
+    /**
      * 尝试开始游戏。如果满足条件，则返回空字符串，否则返回原因描述
      */
     fun tryStart(): String {
@@ -396,7 +415,7 @@ class Console(
             }
 
             // “自动更新指南针”任务开始运行
-            compassRefreshTask = compassTask.runTaskTimer(plugin, 0, 20)
+            compassRefreshTask = compassTask.runTaskTimer(plugin, 0, 5)
 
             // 通知速通者
             speedrunnerSet.forEach {
@@ -455,12 +474,16 @@ class Console(
         }
         votingEndMap[player.uniqueId] = true
         votingCount++
-        adventure.player(player)
-            .sendMessage(Component.text("Voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it)
+                .sendMessage(Component.text("Voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
+        }
         if (votingCount != votingEndMap.size) {
             return
         }
         // 投票完成，游戏结束
+        voteTask?.cancel()
+        voteTask = null
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
         }
@@ -656,7 +679,7 @@ class Console(
                 val lore = item.value.itemMeta!!.lore
                 if (lore.isNullOrEmpty()) continue
                 val loreContent = lore[0]
-                if (loreContent.contentEquals(compassFlag)) {
+                if (loreContent.contains(compassFlag)) {
                     have = true
                     break
                 }

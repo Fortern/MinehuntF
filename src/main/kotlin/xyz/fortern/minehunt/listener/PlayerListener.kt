@@ -33,6 +33,8 @@ class PlayerListener(
             player.gameMode = GameMode.ADVENTURE
             // 自动加入观察者队伍
             console.joinAudience(player)
+        } else if (console.stage == GameStage.PROCESSING) {
+            console.reJoinInGame(player)
         }
     }
     

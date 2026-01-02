@@ -41,6 +41,8 @@ class MinehuntCommand(
             .append(Component.text("进行中止游戏的投票", NamedTextColor.WHITE)),
         Component.text("/minehunt give  ", NamedTextColor.GOLD)
             .append(Component.text("给予游戏中所需的特殊物品", NamedTextColor.WHITE)),
+        Component.text("/minehunt remake  ", NamedTextColor.GOLD)
+            .append(Component.text("重开游戏，只能在开始前或结束后执行", NamedTextColor.WHITE)),
     )
     private val ruleHelpMessages = listOf(
         Component.text("/minehunt rule <ruleItem>  ", NamedTextColor.GREEN)
@@ -122,6 +124,10 @@ class MinehuntCommand(
 
             "give" -> {
                 onGive(sender, args, flag)
+            }
+
+            "remake" -> {
+                onRemake(sender, args, flag)
             }
 
             else -> {
@@ -346,6 +352,14 @@ class MinehuntCommand(
                 return items.filter { it.startsWith(item) }
             }
         }
+        return null
+    }
+
+    /**
+     * 重开游戏
+     */
+    fun onRemake(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
+        // TODO 应该有更好的方式重开
         return null
     }
 
