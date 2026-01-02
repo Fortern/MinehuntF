@@ -1,5 +1,6 @@
 package xyz.fortern.minehunt.listener
 
+import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.GameMode
 import org.bukkit.entity.EnderDragon
 import org.bukkit.event.EventHandler
@@ -17,7 +18,8 @@ import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 
 class PlayerListener(
-    private val console: Console
+    private val console: Console,
+    private val adventure: BukkitAudiences,
 ) : Listener {
     
     /**

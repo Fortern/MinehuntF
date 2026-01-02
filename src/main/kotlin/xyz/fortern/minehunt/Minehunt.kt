@@ -1,39 +1,31 @@
 package xyz.fortern.minehunt
 
+import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.command.MinehuntCommand
-import xyz.fortern.minehunt.command.TestCommand
 import xyz.fortern.minehunt.listener.PlayerListener
 
 class Minehunt : JavaPlugin() {
-    
-    companion object {
-        @JvmStatic
-        private lateinit var instance: Minehunt
-        
-        @JvmStatic
-        fun instance() = instance
-    }
-    
+
+    private lateinit var instance: Minehunt
+    private lateinit var adventure: BukkitAudiences
+
     override fun onEnable() {
-        // Plugin startup logic
-        
         // 初始化
-        instance = this
-        val console = Console()
-        
+        this.instance = this
+        this.adventure = BukkitAudiences.create(this)
+        val console = Console(this, adventure)
+
         // 注册事件
-        Bukkit.getPluginManager().registerEvents(PlayerListener(console), this)
-        
+        Bukkit.getPluginManager().registerEvents(PlayerListener(console, adventure), this)
+
         // 注册命令
-        Bukkit.getPluginCommand("test")!!.setExecutor(TestCommand())
-        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console))
-        
+        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console, adventure, this))
     }
-    
+
     override fun onDisable() {
-        // Plugin shutdown logic
+        this.adventure.close()
     }
 }
 
