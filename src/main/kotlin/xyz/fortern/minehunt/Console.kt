@@ -11,6 +11,7 @@ import org.bukkit.GameMode
 import org.bukkit.GameRule
 import org.bukkit.Location
 import org.bukkit.Material
+import org.bukkit.OfflinePlayer
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -23,7 +24,6 @@ import org.bukkit.scoreboard.DisplaySlot
 import org.bukkit.scoreboard.Team
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
-import xyz.fortern.minehunt.util.serialize
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -143,13 +143,14 @@ class Console(
         val itemMeta = this.itemMeta!!
         itemMeta.setMaxStackSize(1)
         // 设置名称
-
-        itemMeta.setDisplayName(Component.text("Hunter Compass", NamedTextColor.GOLD).serialize())
+        // TODO 颜色
+        itemMeta.setDisplayName(Component.text("Hunter Compass", NamedTextColor.GOLD).content())
         // 设置Lore
+        // TODO 颜色
         itemMeta.lore = listOf(
             // 第一个Lore用于标记这个指南针
-            Component.text(compassFlag, NamedTextColor.GRAY).serialize(),
-            Component.text("右键使用或扔出以切换目标", NamedTextColor.GRAY).serialize()
+            Component.text(compassFlag, NamedTextColor.GRAY).content(),
+            Component.text("右键使用或扔出以切换目标", NamedTextColor.GRAY).content()
         )
         // 添加附魔：消失诅咒
         itemMeta.addEnchant(Enchantment.VANISHING_CURSE, 1, false)
@@ -539,24 +540,32 @@ class Console(
         val i = trackRunnerMap[hunter.uniqueId] ?: return
         if (speedrunnerList.isEmpty()) return
 
+        var nextTrackRunner: OfflinePlayer?
+
         var j = i
         while (true) {
             j++
             j %= speedrunnerList.size
             if (i == j) {
-                // 极端情况，所有速通者都掉线了
+                // 极端情况，所有速通者都掉线了，或者只有1个速通者
+                // 则追踪到一开始追踪到的那个人
+                nextTrackRunner = Bukkit.getOfflinePlayer(speedrunnerList[j])
                 break
             }
             val uuid = speedrunnerList[j]
-            val speedrunner = Bukkit.getPlayer(uuid)
-            if (!outPlayers.contains(uuid) && speedrunner != null) {
-                trackRunnerMap[hunter.uniqueId] = j
-                // hunter操作指南针时立即刷新位置
-                refreshCompassTrack(hunter, speedrunner)
-                adventure.player(hunter).sendActionBar(Component.text("指向 ${speedrunner.name}"))
+            nextTrackRunner = Bukkit.getOfflinePlayer(uuid)
+            if (!outPlayers.contains(uuid) && nextTrackRunner.isOnline) {
+                // 有符合条件的下一个目标
                 break
             }
         }
+
+        trackRunnerMap[hunter.uniqueId] = j
+        // hunter操作指南针时立即刷新位置
+        if (nextTrackRunner.isOnline && !outPlayers.contains(nextTrackRunner.uniqueId)) {
+            refreshCompassTrack(hunter, nextTrackRunner.player!!)
+        }
+        adventure.player(hunter).sendActionBar(Component.text("指向 ${nextTrackRunner.name}"))
     }
 
     /**

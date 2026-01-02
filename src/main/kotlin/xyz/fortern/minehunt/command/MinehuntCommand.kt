@@ -3,6 +3,7 @@ package xyz.fortern.minehunt.command
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
@@ -127,7 +128,7 @@ class MinehuntCommand(
             }
 
             "remake" -> {
-                onRemake(sender, args, flag)
+                onRemake(sender, flag)
             }
 
             else -> {
@@ -296,7 +297,8 @@ class MinehuntCommand(
             if (console.stage == Console.GameStage.PREPARING && console.beginningCountdown == null) {
                 val result = console.tryStart()
                 if (result.isNotEmpty()) {
-                    adventure.sender(sender).sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))
+                    adventure.sender(sender)
+                        .sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))
                 }
             } else {
                 adventure.sender(sender).sendMessage(Component.text("游戏已经开始或已经结束"))
@@ -358,8 +360,16 @@ class MinehuntCommand(
     /**
      * 重开游戏
      */
-    fun onRemake(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
-        // TODO 应该有更好的方式重开
+    fun onRemake(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) {
+            // 重开本质上是停止服务器，由外部程序控制如何重开
+            Bukkit.getScheduler().runTaskLater(plugin, Runnable { Bukkit.shutdown() }, 100L)
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(Component.text("${it.name}发起重开"))
+                adventure.player(it).sendMessage(Component.text("5秒后重开"))
+            }
+        }
+
         return null
     }
 

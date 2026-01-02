@@ -12,8 +12,8 @@ import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPortalEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
-import org.spigotmc.event.player.PlayerSpawnLocationEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 
@@ -57,7 +57,7 @@ class PlayerListener(
      * 猎人重生时给予追踪指南针
      */
     @EventHandler
-    fun onPlayerSpawn(event: PlayerSpawnLocationEvent) {
+    fun onPlayerSpawn(event: PlayerRespawnEvent) {
         console.giveCompassIfNeed(event.player)
     }
     
