@@ -3,6 +3,7 @@ package xyz.fortern.minehunt
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.Difficulty
@@ -206,17 +207,20 @@ class Console(
 
         speedrunnerTeam.let { t ->
             t.color = ChatColor.BLUE
-            t.prefix = Component.text("[速通者] ", NamedTextColor.BLUE).serialize()
+//            t.prefix = Component.text("[速通者] ", NamedTextColor.BLUE).serialize()
+            t.prefix = "[速通者] "
             t.entries.forEach { speedrunnerTeam.removeEntry(it) }
         }
         hunterTeam.let { t ->
             t.color = ChatColor.RED
-            t.prefix = Component.text("[猎人] ", NamedTextColor.RED).serialize()
+//            t.prefix = Component.text("[猎人] ", NamedTextColor.RED).serialize()
+            t.prefix = "[猎人] "
             t.entries.forEach { hunterTeam.removeEntry(it) }
         }
         audienceTeam.let { t ->
             t.color = ChatColor.GRAY
-            t.prefix = Component.text("[观众] ", NamedTextColor.GRAY).serialize()
+//            t.prefix = Component.text("[观众] ", NamedTextColor.GRAY).serialize()
+            t.prefix = "[观众] "
             t.entries.forEach { audienceTeam.removeEntry(it) }
         }
     }
@@ -288,12 +292,14 @@ class Console(
                 if (--countdown > 0) {
                     // 倒计时期间，每秒显示一次标题
                     Bukkit.getOnlinePlayers().forEach {
-                        it.sendTitle(
-                            Component.text(countdown.toString(), NamedTextColor.DARK_PURPLE).serialize(),
-                            Component.text("开始倒计时", NamedTextColor.GRAY).serialize(),
-                            5,
-                            20,
-                            5
+                        adventure.player(it).showTitle(
+                            Title.title(
+                                Component.text(countdown.toString(), NamedTextColor.DARK_PURPLE),
+                                Component.text("开始倒计时", NamedTextColor.GRAY),
+                                5,
+                                20,
+                                5
+                            )
                         )
                     }
                 } else {
@@ -394,7 +400,7 @@ class Console(
 
             // 通知速通者
             speedrunnerSet.forEach {
-                Bukkit.getPlayer(it)?.sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED).serialize())
+                adventure.player(it).sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED))
             }
             hunterSpawnCD = null
         }, gameRules.getRuleValue(RuleKey.HUNTER_READY_CD) * 20L)
@@ -422,7 +428,7 @@ class Console(
                 votingEndMap.clear()
                 votingCount = 0
                 Bukkit.getOnlinePlayers().forEach {
-                    it.sendMessage(Component.text("票数不足，游戏继续。").serialize())
+                    adventure.player(it).sendMessage(Component.text("票数不足，游戏继续。"))
                 }
             }, 60 * 20L)
             // 统计参与投票的玩家
@@ -438,9 +444,8 @@ class Console(
                 votingEndMap[it] = false
             }
             Bukkit.getOnlinePlayers().forEach {
-                it.sendMessage(
-                    Component.text("${player.name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop").serialize()
-                )
+                adventure.player(it)
+                    .sendMessage(Component.text("${player.name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop"))
             }
         }
         // 玩家投票
@@ -457,7 +462,7 @@ class Console(
         }
         // 投票完成，游戏结束
         Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD).serialize())
+            adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
         }
         end(null)
     }
@@ -475,11 +480,11 @@ class Console(
         compassRefreshTask = null
         // 所有人设为生存模式
         Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN).serialize())
+            adventure.player(it).sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
             if (winner != null) {
-                it.sendMessage(Component.text("获胜者：$winner", NamedTextColor.GOLD).serialize())
+                adventure.player(it).sendMessage(Component.text("获胜者：$winner", NamedTextColor.GOLD))
             } else {
-                it.sendMessage(Component.text("没有赢家", NamedTextColor.GOLD).serialize())
+                adventure.player(it).sendMessage(Component.text("没有赢家", NamedTextColor.GOLD))
             }
             it.gameMode = GameMode.SURVIVAL
         }
@@ -587,26 +592,31 @@ class Console(
     }
 
     private fun initScoreboard() {
+        // TODO 将使用更好的计分板API
+
         //清除旧的计分板信息
         scoreboard.teams.forEach { it.unregister() }
         scoreboard.getObjective("rule-list")?.unregister()
 
         //设置新的计分板信息
+        val displayComponent = Component.text("游戏规则", NamedTextColor.DARK_AQUA)
         val ruleListObjective = scoreboard.registerNewObjective(
             "rule-list",
             Criteria.DUMMY,
-            Component.text("游戏规则", NamedTextColor.DARK_AQUA).serialize()
+            displayComponent.content()
         )
         val rules = gameRules.getAllRules()
         rules.onEachIndexed { i, entry ->
-            val stupidSpigotEntry = Component.text(entry.key.info, NamedTextColor.GOLD).serialize()
+            val ruleInfoComponent = Component.text(entry.key.info, NamedTextColor.GOLD)
+            val stupidSpigotEntry = ruleInfoComponent.content()
             val score = ruleListObjective.getScore(stupidSpigotEntry)
             score.score = rules.size - i
 
             val teamForOneRule = scoreboard.registerNewTeam(stupidSpigotEntry)
             teamForOneRule.addEntry(stupidSpigotEntry)
-            teamForOneRule.suffix =
-                Component.text(": ").append(Component.text(entry.value.toString(), NamedTextColor.GREEN)).serialize()
+//            teamForOneRule.suffix =
+//                Component.text(": ").append(Component.text(entry.value.toString(), NamedTextColor.GREEN)).serialize()
+            teamForOneRule.suffix = ": " + entry.value.toString()
         }
         ruleListObjective.displaySlot = DisplaySlot.SIDEBAR
     }
@@ -615,10 +625,12 @@ class Console(
      * 更新规则时刷新对应规则项的后缀
      */
     fun refreshEntry(ruleKey: RuleKey<*>) {
-        val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
-        teamForOneRule.suffix = Component.text(": ")
-            .append(Component.text(gameRules.getRuleValue(ruleKey).toString(), NamedTextColor.GREEN))
-            .serialize()
+//        val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
+        val teamForOneRule = scoreboard.getTeam(ruleKey.info) ?: return
+//        teamForOneRule.suffix = Component.text(": ")
+//            .append(Component.text(gameRules.getRuleValue(ruleKey).toString(), NamedTextColor.GREEN))
+//            .serialize()
+        teamForOneRule.suffix = ": " + gameRules.getRuleValue(ruleKey).toString()
     }
 
     /**
