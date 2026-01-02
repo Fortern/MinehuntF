@@ -47,7 +47,7 @@ class PlayerListener(
                 console.interruptCountdownToStart()
             }
             // 将离开的玩家从team中移除
-            player.scoreboard.teams.forEach { it.removePlayer(player) }
+            player.scoreboard.teams.forEach { it.removeEntry(player.name) }
         }
     }
     

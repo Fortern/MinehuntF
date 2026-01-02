@@ -224,17 +224,17 @@ class Console(
     /**
      * 判断玩家是否为猎人
      */
-    fun isHunter(player: Player): Boolean = hunterTeam.hasPlayer(player)
+    fun isHunter(player: Player): Boolean = hunterTeam.hasEntry(player.name)
 
     /**
      * 判断是否为观众
      */
-    fun isSpectator(player: Player): Boolean = audienceTeam.hasPlayer(player)
+    fun isSpectator(player: Player): Boolean = audienceTeam.hasEntry(player.name)
 
     /**
      * 判断是否为速通者
      */
-    fun isSpeedrunner(player: Player): Boolean = speedrunnerTeam.hasPlayer(player)
+    fun isSpeedrunner(player: Player): Boolean = speedrunnerTeam.hasEntry(player.name)
 
     /**
      * 加入猎人阵营
