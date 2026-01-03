@@ -54,12 +54,12 @@ class Console(
     /**
      * 主世界
      */
-    private val overworld = Bukkit.getWorld("world")!!
+    val overworld = Bukkit.getWorld("world")!!
 
     /**
      * 下界
      */
-    private val nether = Bukkit.getWorld("world_nether")!!
+    val nether = Bukkit.getWorld("world_nether")!!
 
     /**
      * 速通者队伍

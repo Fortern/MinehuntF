@@ -2,6 +2,7 @@ package xyz.fortern.minehunt.listener
 
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.GameMode
+import org.bukkit.Material
 import org.bukkit.entity.EnderDragon
 import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
@@ -10,12 +11,14 @@ import org.bukkit.event.entity.EntityDeathEvent
 import org.bukkit.event.entity.PlayerDeathEvent
 import org.bukkit.event.player.PlayerBedEnterEvent
 import org.bukkit.event.player.PlayerDropItemEvent
+import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPortalEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
+import org.bukkit.inventory.EquipmentSlot
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
 import xyz.fortern.minehunt.rule.RuleKey
@@ -132,12 +135,30 @@ class PlayerListener(
         }
     }
 
+    /**
+     * 处理玩家使用床
+     */
     @EventHandler
-    fun onIntentionalGameDesign(event: PlayerBedEnterEvent) {
-        if (console.stage != GameStage.PROCESSING)
+    fun onPlayerBedEnterEvent(event: PlayerBedEnterEvent) {
+        if (console.stage != GameStage.PROCESSING || console.gameRules.getRuleValue(RuleKey.INTENTIONAL))
             return
         // ALLOW 玩家入睡。这似乎是唯一阻止床爆炸的方法。
-        if (!console.gameRules.getRuleValue(RuleKey.INTENTIONAL) && event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE)
+        if (event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE)
             event.setUseBed(Event.Result.ALLOW)
     }
+
+    /**
+     * 处理玩家使用重生锚
+     */
+    @EventHandler
+    fun onItemUse(event: PlayerInteractEvent) {
+        if (event.hand == EquipmentSlot.OFF_HAND
+            || console.stage != GameStage.PROCESSING
+            || console.gameRules.getRuleValue(RuleKey.INTENTIONAL)
+        ) return
+        val block = event.clickedBlock ?: return
+        if (block.world == console.nether || block.type != Material.RESPAWN_ANCHOR) return
+        event.isCancelled = true
+    }
+
 }
