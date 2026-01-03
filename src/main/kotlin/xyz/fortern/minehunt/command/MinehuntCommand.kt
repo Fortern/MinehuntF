@@ -366,14 +366,16 @@ class MinehuntCommand(
      */
     fun onRemake(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
+            if (console.stage == Console.GameStage.PROCESSING) {
+                adventure.sender(sender).sendMessage(Component.text("游戏中不能重开"))
+            }
             // 重开本质上是停止服务器，由外部程序控制如何重开
-            Bukkit.getScheduler().runTaskLater(plugin, Runnable { Bukkit.shutdown() }, 100L)
             Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it).sendMessage(Component.text("${it.name}发起重开"))
+                adventure.player(it).sendMessage(Component.text(it.name).append(Component.text("发起重开")))
                 adventure.player(it).sendMessage(Component.text("5秒后重开"))
             }
+            Bukkit.getScheduler().runTaskLater(plugin, Runnable { Bukkit.shutdown() }, 100L)
         }
-
         return null
     }
 
