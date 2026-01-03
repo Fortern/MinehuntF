@@ -72,5 +72,13 @@ class RuleKey<T> private constructor(
             listOf("true", "false"),
             boolValidate
         )
+        val INTENTIONAL = RuleKey(
+            "intentional",
+            "启用刻意的游戏设计",
+            Boolean::class.java,
+            "Boolean",
+            listOf("true", "false"),
+            boolValidate
+        )
     }
 }

@@ -21,9 +21,9 @@ class MinehuntCommand(
     private val plugin: JavaPlugin,
 ) : TabExecutor {
 
-    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give")
+    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give", "remake")
     private val teams: List<String> = listOf("hunter", "speedrunner", "audience")
-    private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire")
+    private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire", "intentional")
     private val items: List<String> = listOf("compass")
 
     private val helpMessages = listOf(
@@ -33,8 +33,8 @@ class MinehuntCommand(
         Component.text("/minehunt join (hunter|speedrunner|audience)  ", NamedTextColor.GOLD)
             .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
         Component.text("/minehunt leave  ", NamedTextColor.GOLD)
-            .append(Component.text("加入观察者阵营", NamedTextColor.WHITE)),
-        Component.text("/minehunt rule <ruleKey>  ", NamedTextColor.GOLD)
+            .append(Component.text("加入观众阵营", NamedTextColor.WHITE)),
+        Component.text("/minehunt rule <ruleItem> [value]  ", NamedTextColor.GOLD)
             .append(Component.text("查看或修改游戏规则", NamedTextColor.WHITE)),
         Component.text("/minehunt start  ", NamedTextColor.GOLD)
             .append(Component.text("开始游戏", NamedTextColor.WHITE)),
@@ -233,6 +233,10 @@ class MinehuntCommand(
 
             "friendly_fire" -> {
                 getOrChangeRule(args, flag, sender, RuleKey.FRIENDLY_FIRE)
+            }
+
+            "intentional" -> {
+                getOrChangeRule(args, flag, sender, RuleKey.INTENTIONAL)
             }
 
             else -> {

@@ -3,10 +3,12 @@ package xyz.fortern.minehunt.listener
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.GameMode
 import org.bukkit.entity.EnderDragon
+import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDeathEvent
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.event.player.PlayerBedEnterEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
@@ -16,12 +18,13 @@ import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
 import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.Console.GameStage
+import xyz.fortern.minehunt.rule.RuleKey
 
 class PlayerListener(
     private val console: Console,
     private val adventure: BukkitAudiences,
 ) : Listener {
-    
+
     /**
      * 玩家加入服务器时
      */
@@ -37,7 +40,7 @@ class PlayerListener(
             console.reJoinInGame(player)
         }
     }
-    
+
     /**
      * 参与游戏的玩家在倒计时阶段退出，则中断倒计时
      */
@@ -52,7 +55,7 @@ class PlayerListener(
             player.scoreboard.teams.forEach { it.removeEntry(player.name) }
         }
     }
-    
+
     /**
      * 猎人重生时给予追踪指南针
      */
@@ -60,7 +63,7 @@ class PlayerListener(
     fun onPlayerSpawn(event: PlayerRespawnEvent) {
         console.giveCompassIfNeed(event.player)
     }
-    
+
     /**
      * 玩家丢弃物品时，阻止玩家丢弃猎人指南针，并将追踪目标切换到下一个
      */
@@ -68,11 +71,11 @@ class PlayerListener(
     fun onDropItem(event: PlayerDropItemEvent) {
         val itemStack = event.itemDrop.itemStack
         if (!console.isHunterCompass(itemStack)) return
-        
+
         console.trackNextPlayer(event.player)
         event.isCancelled = true
     }
-    
+
     /**
      * 玩家想要移动时，在特定情况下阻止玩家移动
      */
@@ -80,13 +83,13 @@ class PlayerListener(
     fun onPlayerMove(event: PlayerMoveEvent) {
         // 暂且通过取消事件的方法阻止玩家移动
         if (console.stage != GameStage.PROCESSING) return
-        
+
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
         if (console.isHunter(player) && player.gameMode == GameMode.SPECTATOR)
             event.isCancelled = true
     }
-    
+
     /**
      * 玩家想要传送时，在特定情况下阻止玩家传送
      */
@@ -97,7 +100,7 @@ class PlayerListener(
             event.isCancelled = true
         }
     }
-    
+
     /**
      * 处理玩家死亡事件
      */
@@ -105,7 +108,7 @@ class PlayerListener(
     fun onPlayerDeath(event: PlayerDeathEvent) {
         console.handlePlayerDeath(event.entity)
     }
-    
+
     /**
      * 末影龙死亡事件
      */
@@ -115,18 +118,26 @@ class PlayerListener(
             console.end("speedrunner")
         }
     }
-    
+
     /**
      * 监听传送门传送事件。改变维度时，记录最后的位置。
      */
     @EventHandler
     fun onPlayerChangeWorld(event: PlayerPortalEvent) {
         if (console.stage != GameStage.PROCESSING) return
-        
+
         // 我们用了Kotlin有了更装B的写法
         event.from.world?.let {
             console.recordLocAtPortal(event.player, event.from)
         }
     }
-    
+
+    @EventHandler
+    fun onIntentionalGameDesign(event: PlayerBedEnterEvent) {
+        if (console.stage != GameStage.PROCESSING)
+            return
+        // ALLOW 玩家入睡。这似乎是唯一阻止床爆炸的方法。
+        if (!console.gameRules.getRuleValue(RuleKey.INTENTIONAL) && event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE)
+            event.setUseBed(Event.Result.ALLOW)
+    }
 }
