@@ -37,7 +37,7 @@ class PlayerListener(
         if (console.stage == GameStage.PREPARING) {
             // 在准备阶段，玩家设为冒险模式
             player.gameMode = GameMode.ADVENTURE
-            // 自动加入观察者队伍
+            // 自动加入观众阵营
             console.joinAudience(player)
         } else if (console.stage == GameStage.PROCESSING) {
             console.reJoinInGame(player)

@@ -202,7 +202,7 @@ class Console(
             val playersNum = voteForStop.playersNum()
             adventure.player(it).sendMessage(
                 Component.text(
-                    "投票重开游戏 " +
+                    "投票终止游戏 " +
                             "(${pollingNum}/${playersNum}) " +
                             "(${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
                     NamedTextColor.RED
@@ -215,11 +215,15 @@ class Console(
      * 为重开游戏而发起的投票进程
      */
     private val voteForRemake: VoteProcess = VoteProcess(plugin, 30L * 20, 0.5f, {
+        stage = GameStage.REMAKE
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------投票结束，游戏重开--------"))
+            adventure.player(it).sendMessage(Component.text("--------投票结束，5秒后游戏重开--------"))
             // 重开本质上是停止服务器，由外部程序控制如何启动新游戏
-            Bukkit.shutdown()
         }
+        // 5 秒后重开
+        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            Bukkit.shutdown()
+        }, 5 * 20L)
     }, {
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------投票结束，票数不足--------"))
@@ -538,7 +542,12 @@ class Console(
     fun voteForRemake(player: Player) {
         val audience = adventure.player(player)
         if (stage == GameStage.PROCESSING || beginningCountdown != null) {
-            audience.sendMessage(Component.text("游戏中不能重开"))
+            audience.sendMessage(Component.text("游戏中不能重开", NamedTextColor.RED))
+            return
+        }
+        if (stage == GameStage.REMAKE) {
+            audience.sendMessage(Component.text("正在重开......"))
+            return
         }
         // 新投票，统计参与投票的玩家，并通知所有玩家
         if (!voteForRemake.isRunning()) {
@@ -785,6 +794,6 @@ class Console(
      * 游戏阶段
      */
     enum class GameStage {
-        PREPARING, PROCESSING, OVER
+        PREPARING, PROCESSING, OVER, REMAKE
     }
 }

@@ -304,7 +304,7 @@ class MinehuntCommand(
                         .sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))
                 }
             } else {
-                adventure.sender(sender).sendMessage(Component.text("游戏已经开始或已经结束"))
+                adventure.sender(sender).sendMessage(Component.text("现在不能开始游戏", NamedTextColor.RED))
             }
         }
         return null
