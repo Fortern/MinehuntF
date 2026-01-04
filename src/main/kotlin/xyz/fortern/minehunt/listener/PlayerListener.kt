@@ -118,7 +118,7 @@ class PlayerListener(
     @EventHandler
     fun onDragonDeath(event: EntityDeathEvent) {
         if (event.entity is EnderDragon && console.stage == GameStage.PROCESSING) {
-            console.end("speedrunner")
+            console.end("Speedrunner")
         }
     }
 

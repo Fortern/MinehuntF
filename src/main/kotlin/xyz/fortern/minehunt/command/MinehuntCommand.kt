@@ -3,7 +3,6 @@ package xyz.fortern.minehunt.command
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
-import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
@@ -366,15 +365,11 @@ class MinehuntCommand(
      */
     fun onRemake(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
-            if (console.stage == Console.GameStage.PROCESSING) {
-                adventure.sender(sender).sendMessage(Component.text("游戏中不能重开"))
+            if (sender is Player) {
+                console.voteForRemake(sender)
+            } else {
+                adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
             }
-            // 重开本质上是停止服务器，由外部程序控制如何重开
-            Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it).sendMessage(Component.text(it.name).append(Component.text("发起重开")))
-                adventure.player(it).sendMessage(Component.text("5秒后重开"))
-            }
-            Bukkit.getScheduler().runTaskLater(plugin, Runnable { Bukkit.shutdown() }, 100L)
         }
         return null
     }

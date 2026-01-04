@@ -9,7 +9,7 @@ class GameRules internal constructor() {
     init {
         setRuleValue(RuleKey.HUNTER_RESPAWN_CD, 30)
         setRuleValue(RuleKey.HUNTER_READY_CD, 30)
-        setRuleValue(RuleKey.FRIENDLY_FIRE, true)
+        setRuleValue(RuleKey.FRIENDLY_FIRE, false)
         setRuleValue(RuleKey.INTENTIONAL, false)
     }
 

@@ -2,6 +2,7 @@ package xyz.fortern.minehunt
 
 import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
@@ -101,12 +102,12 @@ class Console(
     /**
      * 终止游戏的投票统计
      */
-    private val votingEndMap: MutableMap<UUID, Boolean> = HashMap()
+    private val votingForStopMap: MutableMap<UUID, Boolean> = HashMap()
 
     /**
-     * 投票计数
+     * 终止游戏的投票计数
      */
-    private var votingCount: Int = 0
+    private var votingForStopCount: Int = 0
 
     /**
      * 速通者列表，用于指南针指向的遍历
@@ -180,12 +181,64 @@ class Console(
      */
     private var compassRefreshTask: BukkitTask? = null
 
-    /**
-     * 投票倒计时
-     */
-    private var voteTask: BukkitTask? = null
-
     // bukkit task end
+
+    /**
+     * 为终止游戏而发起的投票进程
+     */
+    private val voteForStop: VoteProcess = VoteProcess(plugin, 30L * 20, 0.8f, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
+        }
+        end(null)
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("投票结束，票数不足"))
+        }
+    }, {
+        // 通知所有玩家投票进程
+        Bukkit.getOnlinePlayers().forEach {
+            val pollingNum = voteForStop.pollingNum()
+            val playersNum = voteForStop.playersNum()
+            adventure.player(it).sendMessage(
+                Component.text(
+                    "投票重开游戏 " +
+                            "(${pollingNum}/${playersNum}) " +
+                            "(${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
+                    NamedTextColor.RED
+                )
+            )
+        }
+    })
+
+    /**
+     * 为重开游戏而发起的投票进程
+     */
+    private val voteForRemake: VoteProcess = VoteProcess(plugin, 30L * 20, 0.5f, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票结束，游戏重开--------"))
+            // 重开本质上是停止服务器，由外部程序控制如何启动新游戏
+            Bukkit.shutdown()
+        }
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票结束，票数不足--------"))
+        }
+    }, {
+        // 通知所有玩家投票进程
+        Bukkit.getOnlinePlayers().forEach {
+            val pollingNum = voteForRemake.pollingNum()
+            val playersNum = voteForRemake.playersNum()
+            adventure.player(it).sendMessage(
+                Component.text(
+                    "投票重开游戏 " +
+                            "(${pollingNum}/${playersNum}) " +
+                            "(${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
+                    NamedTextColor.RED
+                )
+            )
+        }
+    })
 
     init {
         initScoreboard()
@@ -194,7 +247,6 @@ class Console(
         overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
         overworld.setGameRule(GameRule.DO_WEATHER_CYCLE, false)
         overworld.setGameRule(GameRule.DO_MOB_SPAWNING, false)
-        overworld.setGameRule(GameRule.KEEP_INVENTORY, true)
         overworld.setGameRule(GameRule.SPAWN_RADIUS, 0)
         overworld.setGameRule(GameRule.SPECTATORS_GENERATE_CHUNKS, false)
         overworld.difficulty = Difficulty.HARD
@@ -209,19 +261,19 @@ class Console(
         speedrunnerTeam.let { t ->
             t.color = ChatColor.BLUE
 //            t.prefix = Component.text("[速通者] ", NamedTextColor.BLUE).serialize()
-            t.prefix = "[速通者] "
+            t.prefix = "[速通者]"
             t.entries.forEach { speedrunnerTeam.removeEntry(it) }
         }
         hunterTeam.let { t ->
             t.color = ChatColor.RED
 //            t.prefix = Component.text("[猎人] ", NamedTextColor.RED).serialize()
-            t.prefix = "[猎人] "
+            t.prefix = "[猎人]"
             t.entries.forEach { hunterTeam.removeEntry(it) }
         }
         audienceTeam.let { t ->
             t.color = ChatColor.GRAY
 //            t.prefix = Component.text("[观众] ", NamedTextColor.GRAY).serialize()
-            t.prefix = "[观众] "
+            t.prefix = "[观众]"
             t.entries.forEach { audienceTeam.removeEntry(it) }
         }
     }
@@ -295,9 +347,8 @@ class Console(
      */
     fun tryStart(): String {
         if (speedrunnerTeam.size == 0) return "速通者需要至少一位玩家"
-
+        if (voteForRemake.isRunning()) return "正在进行重开投票"
         // 以后可能有其他需要判断的情况
-
         countdownToStart()
         return ""
     }
@@ -381,7 +432,7 @@ class Console(
         hunterTeam.entries.forEach { entry ->
             Bukkit.getPlayer(entry)?.let {
                 hunterSet.add(it.uniqueId)
-                it.teleport(Location(overworld, 0.0, -64.0, 0.0))
+                it.teleport(Location(overworld, 0.0, overworld.minHeight - 2.0, 0.0))
                 trackRunnerMap[it.uniqueId] = 0
             }
         }
@@ -433,62 +484,86 @@ class Console(
      * 投票结束游戏
      */
     fun voteForStop(player: Player) {
+        val audience = adventure.player(player)
         if (stage != GameStage.PROCESSING) {
-            adventure.player(player).sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
+            audience.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
             return
         }
         if (!isHunter(player) && !isSpeedrunner(player)) {
-            adventure.player(player).sendMessage(Component.text("只有游戏中的玩家才能投票"))
+            audience.sendMessage(Component.text("只有游戏中的玩家才能投票"))
             return
         }
-        if (voteTask == null) {
-            // 投票发起
-            voteTask = Bukkit.getScheduler().runTaskLater(plugin, Runnable {
-                voteTask = null
-                votingEndMap.clear()
-                votingCount = 0
-                Bukkit.getOnlinePlayers().forEach {
-                    adventure.player(it).sendMessage(Component.text("票数不足，游戏继续。"))
-                }
-            }, 60 * 20L)
-            // 统计参与投票的玩家
+        // 新投票，统计参与投票的玩家，并通知所有玩家
+        if (!voteForStop.isRunning()) {
+            val players: MutableList<UUID> = mutableListOf()
             speedrunnerSet.forEach {
                 Bukkit.getPlayer(it) ?: return@forEach
                 // 生存模式的速通者统计进来
                 if (!outPlayers.contains(it)) {
-                    votingEndMap[it] = false
+                    players.add(it)
                 }
             }
             hunterSet.forEach {
+                // 所有的猎人统计进来
                 Bukkit.getPlayer(it) ?: return@forEach
-                votingEndMap[it] = false
+                players.add(it)
             }
             Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it)
-                    .sendMessage(Component.text("${player.name}发起了终止游戏的投，如果赞成请在60秒内执行 /minehunt stop"))
+                adventure.player(it).sendMessage(
+                    Component.text("${player.name}发起了终止游戏的投票")
+                        .append(Component.newline())
+                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}"))
+                        .append(Component.newline())
+                        .append(Component.text("如果赞成请在${voteForStop.time / 20}秒内执行"))
+                        .append(
+                            Component.text(" /minehunt stop ", NamedTextColor.GREEN)
+                                .clickEvent(ClickEvent.suggestCommand("/minehunt stop"))
+                        )
+                        .append(Component.text("(可点击执行)", NamedTextColor.WHITE))
+                )
             }
+            voteForStop.newVote(Bukkit.getOnlinePlayers().toList())
         }
         // 玩家投票
-        if (!votingEndMap.containsKey(player.uniqueId)) {
-            adventure.player(player).sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+        if (!voteForStop.canVote(player)) {
+            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
             return
         }
-        votingEndMap[player.uniqueId] = true
-        votingCount++
-        Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it)
-                .sendMessage(Component.text("Voting (${votingCount}/${votingEndMap.size})", NamedTextColor.RED))
+        voteForStop.onPlayerVote(player)
+    }
+
+    /**
+     * 投票重开游戏
+     */
+    fun voteForRemake(player: Player) {
+        val audience = adventure.player(player)
+        if (stage == GameStage.PROCESSING || beginningCountdown != null) {
+            audience.sendMessage(Component.text("游戏中不能重开"))
         }
-        if (votingCount != votingEndMap.size) {
+        // 新投票，统计参与投票的玩家，并通知所有玩家
+        if (!voteForRemake.isRunning()) {
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(
+                    Component.text("${player.name}发起了重开游戏的投票")
+                        .append(Component.newline())
+                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100.0)}"))
+                        .append(Component.newline())
+                        .append(Component.text("如果赞成请在${voteForRemake.time / 20}秒内执行"))
+                        .append(
+                            Component.text(" /minehunt remake ", NamedTextColor.GREEN)
+                                .clickEvent(ClickEvent.suggestCommand("/minehunt remake"))
+                        )
+                        .append(Component.text("(可点击执行)", NamedTextColor.WHITE))
+                )
+            }
+            voteForRemake.newVote(Bukkit.getOnlinePlayers().toList())
+        }
+        // 玩家进行投票
+        if (!voteForRemake.canVote(player)) {
+            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
             return
         }
-        // 投票完成，游戏结束
-        voteTask?.cancel()
-        voteTask = null
-        Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
-        }
-        end(null)
+        voteForRemake.onPlayerVote(player)
     }
 
     /**
@@ -502,6 +577,18 @@ class Console(
         hunterSpawnCD = null
         compassRefreshTask?.cancel()
         compassRefreshTask = null
+        // 取消剩余的复活任务
+        hunterRespawnTasks.forEach {
+            it.value.cancel()
+        }
+        hunterRespawnTasks.clear()
+        // 取消投票进程
+        if (voteForStop.isRunning()) {
+            voteForStop.cancel()
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(Component.text("投票取消", NamedTextColor.RED))
+            }
+        }
         // 所有人设为生存模式
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
@@ -512,11 +599,6 @@ class Console(
             }
             it.gameMode = GameMode.SURVIVAL
         }
-        // 取消剩余的复活任务
-        hunterRespawnTasks.forEach {
-            it.value.cancel()
-        }
-        hunterRespawnTasks.clear()
         // 有仇的报仇
         speedrunnerTeam.setAllowFriendlyFire(true)
         hunterTeam.setAllowFriendlyFire(true)
