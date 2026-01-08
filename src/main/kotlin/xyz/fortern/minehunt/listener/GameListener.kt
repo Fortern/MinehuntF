@@ -157,7 +157,7 @@ class GameListener(
     fun onPiglinTrade(event: PiglinBarterEvent) {
         if (!console.gameRules.getRuleValue(RuleKey.SPEEDRUN_LOOT_UP)) return
 
-        if (ThreadLocalRandom.current().nextInt(5) < 1) {
+        if (ThreadLocalRandom.current().nextInt(10) < 3) {
             event.outcome.add(ItemStack(Material.ENDER_PEARL))
         }
     }
