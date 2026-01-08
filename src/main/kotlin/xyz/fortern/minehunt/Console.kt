@@ -190,9 +190,7 @@ class Console(
             val playersNum = voteForStop.playersNum()
             adventure.player(it).sendMessage(
                 Component.text(
-                    "投票终止游戏 " +
-                            "(${pollingNum}/${playersNum}) " +
-                            "(${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
+                    "投票终止游戏 (${pollingNum}/${playersNum}) (${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
                     NamedTextColor.RED
                 )
             )
@@ -223,9 +221,7 @@ class Console(
             val playersNum = voteForRemake.playersNum()
             adventure.player(it).sendMessage(
                 Component.text(
-                    "投票重开游戏 " +
-                            "(${pollingNum}/${playersNum}) " +
-                            "(${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
+                    "投票重开游戏 (${pollingNum}/${playersNum}) (${String.format("%.2f%%", pollingNum * 100.0 / playersNum)})",
                     NamedTextColor.RED
                 )
             )
@@ -747,12 +743,12 @@ class Console(
     /**
      * 记录玩家进入传送门时的位置
      */
-    fun recordLocAtPortal(player: Player, location: Location) {
-        val world = location.world!!
+    fun recordLocAtPortal(player: Player, from: Location) {
+        val world = from.world!!
         if (world.uid == overworld.uid) {
-            playerLocInWorld[player.uniqueId] = location
+            playerLocInWorld[player.uniqueId] = from
         } else if (world.uid == nether.uid) {
-            playerLocInNether[player.uniqueId] = location
+            playerLocInNether[player.uniqueId] = from
         }
     }
 
@@ -781,7 +777,7 @@ class Console(
     /**
      * 玩家是否正在重生
      */
-    fun isRespawning(player: Player ): Boolean {
+    fun isRespawning(player: Player): Boolean {
         return hunterRespawnTasks.containsKey(player.uniqueId)
     }
 
