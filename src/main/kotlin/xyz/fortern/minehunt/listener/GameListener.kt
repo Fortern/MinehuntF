@@ -97,8 +97,10 @@ class GameListener(
 
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
-        if (console.isHunter(player) && player.gameMode == GameMode.SPECTATOR)
-            event.isCancelled = true
+        if (console.isHunter(player)) {
+            if (console.waitHunterSpawning(player) || console.isRespawning(player))
+                event.isCancelled = true
+        }
     }
 
     /**

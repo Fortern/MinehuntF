@@ -779,6 +779,20 @@ class Console(
     }
 
     /**
+     * 玩家是否正在重生
+     */
+    fun isRespawning(player: Player ): Boolean {
+        return hunterRespawnTasks.containsKey(player.uniqueId)
+    }
+
+    /**
+     * 猎人是否在等待出生
+     */
+    fun waitHunterSpawning(player: Player): Boolean {
+        return hunterSpawnCD != null
+    }
+
+    /**
      * 游戏阶段
      */
     enum class GameStage {
