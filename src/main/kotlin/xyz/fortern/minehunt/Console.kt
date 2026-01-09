@@ -27,6 +27,8 @@ import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * 游戏控制台
@@ -36,16 +38,63 @@ class Console(
     private val adventure: BukkitAudiences,
 ) {
 
+    // =========== 游戏流程 start ===========
+
     /**
-     * 全部的游戏规则
+     * 游戏id，用于数据库存储
      */
-    val gameRules = GameRules()
+    var gameId = 0
+        private set
+
+    /**
+     * 开始时间
+     */
+    var startTime: Instant = Instant.DISTANT_FUTURE
+        private set
+
+    /**
+     * 结束时间
+     */
+    var endTime: Instant = Instant.DISTANT_FUTURE
+        private set
+
+    /**
+     * 首次进入下界的时间
+     */
+    var firstTimeInNether: Instant? = null
+        private set
+
+    /**
+     * 首次进入末地的时间
+     */
+    var firstTimeInTheEnd: Instant? = null
+        private set
+
+    /**
+     * 首个进入下界的玩家
+     */
+    var firstPlayerInNether: Player? = null
+        private set
+
+    /**
+     * 首个进入末地的玩家
+     */
+    var firstPlayerInTheEnd: Player? = null
+        private set
 
     /**
      * 游戏阶段
      */
     var stage: GameStage = GameStage.PREPARING
         private set
+
+    // =========== 游戏流程 end ===========
+
+    // =========== 游戏内数据 start ===========
+    /**
+     * 全部的游戏规则
+     */
+    val gameRules = GameRules()
 
     /**
      * 计分板
@@ -61,6 +110,11 @@ class Console(
      * 下界
      */
     val nether = Bukkit.getWorld("world_nether")!!
+
+    /**
+     * 末地
+     */
+    val theEnd = Bukkit.getWorld("world_the_end")!!
 
     /**
      * 速通者队伍
@@ -146,7 +200,9 @@ class Console(
         this.itemMeta = itemMeta
     }
 
-    // bukkit task start
+    // =========== 游戏内数据 end ===========
+
+    // =========== Bukkit Task start ===========
 
     /**
      * 猎人重生Task，保留这些引用方便在游戏结束时取消这些任务
@@ -178,7 +234,7 @@ class Console(
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
         }
-        end(null)
+        end(null, FinishType.STOPPED)
     }, {
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("投票结束，票数不足"))
@@ -227,6 +283,7 @@ class Console(
             )
         }
     })
+    // =========== Bukkit Task end ===========
 
     init {
         initScoreboard()
@@ -242,24 +299,20 @@ class Console(
         // 初始化队伍
         val scoreboard = Bukkit.getScoreboardManager()!!.mainScoreboard
 
-        speedrunnerTeam = scoreboard.getTeam("speedrunner") ?: scoreboard.registerNewTeam("speedrunner")
-        hunterTeam = scoreboard.getTeam("hunter") ?: scoreboard.registerNewTeam("hunter")
-        audienceTeam = scoreboard.getTeam("spectator") ?: scoreboard.registerNewTeam("spectator")
-
-        speedrunnerTeam.let { t ->
+        scoreboard.getTeam("speedrunner")?.unregister()
+        speedrunnerTeam = scoreboard.registerNewTeam("speedrunner").also { t ->
             t.color = ChatColor.BLUE
             t.prefix = "[速通者]"
-            t.entries.forEach { speedrunnerTeam.removeEntry(it) }
         }
-        hunterTeam.let { t ->
+        scoreboard.getTeam("hunter")?.unregister()
+        hunterTeam = scoreboard.registerNewTeam("hunter").also { t ->
             t.color = ChatColor.RED
             t.prefix = "[猎人]"
-            t.entries.forEach { hunterTeam.removeEntry(it) }
         }
-        audienceTeam.let { t ->
+        scoreboard.getTeam("audience")?.unregister()
+        audienceTeam = scoreboard.registerNewTeam("audience").also { t ->
             t.color = ChatColor.GRAY
             t.prefix = "[观众]"
-            t.entries.forEach { audienceTeam.removeEntry(it) }
         }
     }
 
@@ -473,6 +526,7 @@ class Console(
             adventure.player(player).sendMessage(Component.text("--------游戏开始-------", NamedTextColor.GREEN))
         }
         stage = GameStage.PROCESSING
+        startTime = Clock.System.now()
     }
 
     /**
@@ -569,9 +623,13 @@ class Console(
     /**
      * 结束处理
      */
-    fun end(winner: String?) {
+    fun end(winner: Faction?, finishType: FinishType) {
         if (stage != GameStage.PROCESSING) return
 
+        // GameRecord
+        endTime = Clock.System.now()
+
+        // GameStage
         stage = GameStage.OVER
         hunterSpawnCD?.cancel()
         hunterSpawnCD = null
@@ -692,7 +750,7 @@ class Console(
             outPlayers.add(uuid)
             // 如给所有hunter都淘汰，则游戏结束
             if (outPlayers.size == speedrunnerSet.size) {
-                Bukkit.getScheduler().runTaskLater(plugin, Runnable { end("Hunter") }, 0)
+                Bukkit.getScheduler().runTaskLater(plugin, Runnable { end(Faction.HUNTER, FinishType.FINISHED) }, 0)
             }
         } else if (isHunter(player)) {
             // 猎人置为旁观者模式，稍后复活
@@ -743,12 +801,26 @@ class Console(
     /**
      * 记录玩家进入传送门时的位置
      */
-    fun recordLocAtPortal(player: Player, from: Location) {
+    fun recordLocAtPortal(player: Player, from: Location, to: Location?) {
         val world = from.world!!
         if (world.uid == overworld.uid) {
             playerLocInWorld[player.uniqueId] = from
         } else if (world.uid == nether.uid) {
             playerLocInNether[player.uniqueId] = from
+        }
+        if (to != null) {
+            val toWorld = to.world!!
+            if (toWorld == nether) {
+                if (firstPlayerInNether == null) {
+                    firstPlayerInNether = player.uniqueId
+                    firstTimeInNether = Clock.System.now()
+                }
+            } else if (toWorld == theEnd) {
+                if (firstPlayerInTheEnd == null) {
+                    firstPlayerInTheEnd = player.uniqueId
+                    firstTimeInTheEnd = Clock.System.now()
+                }
+            }
         }
     }
 
@@ -793,5 +865,12 @@ class Console(
      */
     enum class GameStage {
         PREPARING, COUNTDOWN, PROCESSING, OVER, REMAKE
+    }
+
+    /**
+     * 猎人游戏阵营
+     */
+    enum class Faction(name: String) {
+        HUNTER("Hunter"), SPEEDRUN("Speedrunner")
     }
 }
