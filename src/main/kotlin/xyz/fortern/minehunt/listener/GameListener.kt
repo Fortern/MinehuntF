@@ -5,15 +5,19 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.GameMode
 import org.bukkit.Material
+import org.bukkit.entity.AbstractArrow
 import org.bukkit.entity.Blaze
 import org.bukkit.entity.EnderDragon
 import org.bukkit.entity.Enderman
+import org.bukkit.entity.Player
+import org.bukkit.entity.Trident
 import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDeathEvent
 import org.bukkit.event.entity.PiglinBarterEvent
 import org.bukkit.event.entity.PlayerDeathEvent
+import org.bukkit.event.entity.ProjectileHitEvent
 import org.bukkit.event.player.PlayerBedEnterEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerInteractEvent
@@ -204,6 +208,18 @@ class GameListener(
         if (!console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL) && console.isHunter(event.player)) {
             event.setUseInteractedBlock(Event.Result.DENY)
         }
+    }
+
+    /**
+     * arrow 射入实体事件
+     */
+    @EventHandler
+    fun onArrow(event: ProjectileHitEvent) {
+        event.hitEntity ?: return
+        val arrow = event.entity
+        val shooter = arrow.shooter
+        if (shooter == null || shooter !is Player || arrow !is AbstractArrow || arrow is Trident) return
+        console.onPlayerArrowHit(shooter)
     }
 
 }

@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.title.Title
+import org.apache.commons.lang3.time.DurationFormatUtils
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.Difficulty
@@ -13,7 +14,9 @@ import org.bukkit.GameRule
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.OfflinePlayer
+import org.bukkit.Statistic
 import org.bukkit.enchantments.Enchantment
+import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.CompassMeta
@@ -23,12 +26,24 @@ import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Criteria
 import org.bukkit.scoreboard.DisplaySlot
 import org.bukkit.scoreboard.Team
+import xyz.fortern.minehunt.record.FactionInfo
+import xyz.fortern.minehunt.record.FinishType
+import xyz.fortern.minehunt.record.GameRecord
+import xyz.fortern.minehunt.record.MinehuntRecord
+import xyz.fortern.minehunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
+import xyz.fortern.minehunt.util.foodStats
+import xyz.fortern.minehunt.util.oreStats
+import xyz.fortern.minehunt.util.toolStats
+import xyz.fortern.minehunt.util.weaponStats
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlin.time.toJavaInstant
 
 /**
  * 游戏控制台
@@ -199,6 +214,11 @@ class Console(
         itemMeta.addEnchant(Enchantment.VANISHING_CURSE, 1, false)
         this.itemMeta = itemMeta
     }
+
+    /**
+     * 玩家箭矢命中次数
+     */
+    private val arrowHits: MutableMap<UUID, Int> = HashMap()
 
     // =========== 游戏内数据 end ===========
 
@@ -465,6 +485,12 @@ class Console(
             it.foodLevel = 20
             it.level = 0
             it.teleport(spawnLocation)
+            // TODO Spigot没有重置统计信息的API，将不可避免地使用反射
+            // 考虑到游戏开局是冒险模式，先手动重置击杀类数据
+            it.setStatistic(Statistic.ENTITY_KILLED_BY, EntityType.PLAYER, 0)
+            it.setStatistic(Statistic.KILL_ENTITY, EntityType.PLAYER, 0)
+            it.setStatistic(Statistic.USE_ITEM, Material.BOW, 0)
+            it.setStatistic(Statistic.USE_ITEM, Material.CROSSBOW, 0)
         }
 
         // 速通者更改为生存模式，并加入speedrunnerList
@@ -527,6 +553,30 @@ class Console(
         }
         stage = GameStage.PROCESSING
         startTime = Clock.System.now()
+
+        val gameRecord = GameRecord(
+            0,
+            startTime,
+            endTime,
+            endTime - startTime,
+            FinishType.NULL,
+            listOf(
+                FactionInfo(
+                    Faction.HUNTER.name,
+                    hunterTeam.color,
+                    0,
+                    hunterSet.toList(),
+                ),
+                FactionInfo(
+                    Faction.SPEEDRUN.name,
+                    speedrunnerTeam.color,
+                    0,
+                    speedrunnerSet.toList(),
+                )
+            ),
+            null
+        )
+        // TODO 游戏数据异步存入数据库
     }
 
     /**
@@ -651,7 +701,7 @@ class Console(
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
             if (winner != null) {
-                adventure.player(it).sendMessage(Component.text("获胜者：$winner", NamedTextColor.GOLD))
+                adventure.player(it).sendMessage(Component.text("获胜者：${winner.displayName}", NamedTextColor.GOLD))
             } else {
                 adventure.player(it).sendMessage(Component.text("没有赢家", NamedTextColor.GOLD))
             }
@@ -660,6 +710,183 @@ class Console(
         // 有仇的报仇
         speedrunnerTeam.setAllowFriendlyFire(true)
         hunterTeam.setAllowFriendlyFire(true)
+
+        // 猎人阵营信息
+        val factionInfo1 = FactionInfo(
+            Faction.HUNTER.name,
+            hunterTeam.color,
+            if (winner == null) 0 else if (winner == Faction.HUNTER) 1 else 2,
+            hunterSet.toList()
+        )
+
+        // 速通者阵营消息信息
+        val factionInfo2 = FactionInfo(
+            Faction.SPEEDRUN.name,
+            speedrunnerTeam.color,
+            if (winner == null) 0 else if (winner == Faction.SPEEDRUN) 1 else 2,
+            speedrunnerSet.toList()
+        )
+
+        // 通用对局信息
+        val gameRecord = GameRecord(
+            gameId,
+            startTime,
+            endTime,
+            endTime - startTime,
+            finishType,
+            listOf(factionInfo1, factionInfo2).sortedBy { it.rank },
+            MinehuntRecord(firstTimeInNether, firstTimeInTheEnd, firstPlayerInNether, firstPlayerInTheEnd)
+        )
+
+        val resultInfo = Component.text()
+            .append(Component.text("=====对局信息=====", NamedTextColor.GREEN))
+            .appendNewline()
+            .append(Component.text("对局ID: $gameId"))
+            .appendNewline()
+            .append(
+                Component.text(
+                    "开始时间: ${startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}"
+                )
+            )
+            .appendNewline()
+            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeMilliseconds)}"))
+            .appendNewline()
+            .append(Component.text("胜者: ${winner?.displayName}"))
+
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(resultInfo)
+        }
+
+        // 玩家在该模式下的数据
+        val playerRecords = (hunterSet + speedrunnerSet).map { uuid ->
+            val player = Bukkit.getOfflinePlayer(uuid)
+            // 工具类
+            val toolsTmpMap = toolStats.associateWith { player.getStatistic(Statistic.USE_ITEM, it) }.filter { (_, n) -> n > 0 }
+            // 武器类
+            val weaponsTmpMap = weaponStats.associateWith { player.getStatistic(Statistic.USE_ITEM, it) }.filter { (_, n) -> n > 0 }
+            // 食物类
+            val foodTmpMap = foodStats.associateWith { player.getStatistic(Statistic.USE_ITEM, it) }.filter { (_, n) -> n > 0 }
+            // 矿石类
+            val oreTmpMap = oreStats.associateWith { player.getStatistic(Statistic.MINE_BLOCK, it) }.filter { (_, n) -> n > 0 }
+
+            // 生物类
+            val killEntity = mutableMapOf<EntityType, Int>()
+            val killedByEntity = mutableMapOf<EntityType, Int>()
+            EntityType.entries.forEach {
+                if (it == EntityType.UNKNOWN) {
+                    return@forEach
+                }
+                var n: Int = player.getStatistic(Statistic.KILL_ENTITY, it)
+                if (n > 0) {
+                    killEntity[it] = n
+                }
+                n = player.getStatistic(Statistic.ENTITY_KILLED_BY, it)
+                if (n > 0) {
+                    killedByEntity[it] = n
+                }
+            }
+            PlayerInMinehunt(
+                player.uniqueId,
+                gameId,
+                killEntity.mapKeys { it.key.key.toString() },
+                killedByEntity.mapKeys { it.key.key.toString() },
+                foodTmpMap.mapKeys { it.key.key.toString() },
+                toolsTmpMap.mapKeys { it.key.key.toString() },
+                weaponsTmpMap.mapKeys { it.key.key.toString() },
+                oreTmpMap.mapKeys { it.key.key.toString() }
+            )
+            val playerInfo = Component.text()
+                .append(Component.text("=====你的数据=====", NamedTextColor.GREEN))
+                .appendNewline()
+                .append(Component.text("----击杀生物----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (killEntity.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        killEntity.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
+                        }
+                    }
+                )
+                .append(Component.text("----被生物击杀----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (killedByEntity.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        killedByEntity.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
+                        }
+                    }
+                )
+                .append(Component.text("----工具使用----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (toolsTmpMap.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        toolsTmpMap.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n"))
+                                .appendNewline()
+                        }
+                    }
+                )
+                .append(Component.text("----武器使用----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (weaponsTmpMap.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        weaponsTmpMap.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
+                        }
+                        val shootTimes = weaponsTmpMap.getOrDefault(Material.BOW, 0) + weaponsTmpMap.getOrDefault(Material.CROSSBOW, 0)
+                        if (shootTimes == 0) {
+                            return@also
+                        }
+                        val hitRate = String.format("%.2f%%", arrowHits.getOrDefault(uuid, 0) * 100.0 / shootTimes)
+                        text.append(Component.text("箭矢命中率: $hitRate")).appendNewline()
+                    }
+                )
+                .append(Component.text("----食物食用----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (foodTmpMap.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        foodTmpMap.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
+                        }
+                    }.build()
+                )
+                .append(Component.text("----矿石开采----", NamedTextColor.YELLOW))
+                .appendNewline()
+                .append(
+                    Component.text().also { text ->
+                        if (oreTmpMap.isEmpty()) {
+                            text.append(Component.text("No data.")).appendNewline()
+                            return@also
+                        }
+                        oreTmpMap.forEach { (type, n) ->
+                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
+                        }
+                    }.build()
+                )
+                .append(Component.text("----End.----", NamedTextColor.YELLOW))
+            adventure.player(uuid).sendMessage(playerInfo)
+        }
+        // TODO 游戏结果(gameRecord和playerRecords)写入数据库
     }
 
     /**
@@ -847,6 +1074,17 @@ class Console(
     }
 
     /**
+     * 玩家箭矢命中实体时进行记录
+     */
+    fun onPlayerArrowHit(shooter: Player) {
+        if (stage != GameStage.PROCESSING) return
+        if (isHunter(shooter) || isSpeedrunner(shooter)) {
+            val uniqueId = shooter.uniqueId
+            arrowHits[uniqueId] = arrowHits.getOrDefault(uniqueId, 0) + 1
+        }
+    }
+
+    /**
      * 玩家是否正在重生
      */
     fun isRespawning(player: Player): Boolean {
@@ -870,7 +1108,9 @@ class Console(
     /**
      * 猎人游戏阵营
      */
-    enum class Faction(name: String) {
+    enum class Faction(val displayName: String) {
         HUNTER("Hunter"), SPEEDRUN("Speedrunner")
     }
 }
+
+val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss'['Z']'")
