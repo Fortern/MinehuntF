@@ -1,5 +1,5 @@
 name: MinehuntF
-version: '2.2'
+version: '2.3'
 main: xyz.fortern.minehunt.Minehunt
 api-version: '1.20'
 authors: [ Fortern ]
