@@ -42,6 +42,7 @@ import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Instant
 import kotlin.time.toJavaInstant
 
@@ -304,6 +305,11 @@ class Console(
         }
     })
     // =========== Bukkit Task end ===========
+
+    companion object {
+        private const val RULE_LIST = "rule-list"
+        private const val GAME_RESULT = "game-result"
+    }
 
     init {
         initScoreboard()
@@ -574,7 +580,7 @@ class Console(
                     speedrunnerSet.toList(),
                 )
             ),
-            null
+            MinehuntRecord.empty()
         )
         // TODO 游戏数据异步存入数据库
     }
@@ -738,6 +744,9 @@ class Console(
             MinehuntRecord(firstTimeInNether, firstTimeInTheEnd, firstPlayerInNether?.uniqueId, firstPlayerInTheEnd?.uniqueId)
         )
 
+        // 计分板显示
+        overScoreboard(gameRecord, winner)
+
         val resultInfo = Component.text()
             .append(Component.text("=====对局信息=====", NamedTextColor.GREEN))
             .appendNewline()
@@ -749,7 +758,7 @@ class Console(
                 )
             )
             .appendNewline()
-            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeMilliseconds)}"))
+            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeSeconds * 1000L)}"))
             .appendNewline()
             .append(Component.text("胜者: ${winner?.displayName}"))
 
@@ -995,11 +1004,11 @@ class Console(
 
         //清除旧的计分板信息
         scoreboard.teams.forEach { it.unregister() }
-        scoreboard.getObjective("rule-list")?.unregister()
+        scoreboard.getObjective(RULE_LIST)?.unregister()
 
         //设置新的计分板信息
         val ruleListObjective = scoreboard.registerNewObjective(
-            "rule-list",
+            RULE_LIST,
             Criteria.DUMMY,
             "${ChatColor.DARK_AQUA}游戏规则"
         )
@@ -1023,6 +1032,34 @@ class Console(
 //        val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
         val teamForOneRule = scoreboard.getTeam("${ChatColor.GOLD}${ruleKey.displayName}") ?: return
         teamForOneRule.suffix = ": ${ChatColor.GREEN}${gameRules.getRuleValue(ruleKey)}"
+    }
+
+    private fun overScoreboard(gameRecord: GameRecord, winner: Faction?) {
+        scoreboard.teams.forEach { it.unregister() }
+        scoreboard.getObjective(GAME_RESULT)?.unregister()
+        val objective = scoreboard.registerNewObjective(
+            GAME_RESULT,
+            Criteria.DUMMY,
+            "${ChatColor.DARK_AQUA}猎人模式 Game Over"
+        )
+        objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
+        objective.getScore("对局ID: ${gameRecord.id}").score = 14
+        objective.getScore("开始时间: ${startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
+        objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeSeconds * 1000L)}").score = 12
+        objective.getScore("胜者: ${winner?.displayName}").score = 11
+        val specificData = gameRecord.specificData as MinehuntRecord
+        objective.getScore("${ChatColor.YELLOW}====对局阶段====").score = 10
+        val time1 = specificData.firstTimeToNether
+        val duration1 = if (time1 == null) endTime - startTime else time1 - startTime
+        objective.getScore("阶段一•主世界：${DurationFormatUtils.formatDurationHMS(duration1.inWholeSeconds * 1000L)}").score = 9
+        objective.getScore("首个进入下界的玩家：${firstPlayerInNether?.name}").score = 8
+        val time2 = specificData.firstTimeToTheEnd
+        val duration2 = if (time1 == null) Duration.ZERO else if (time2 != null) time2 - time1 else endTime - time1
+        objective.getScore("阶段二•下界：${DurationFormatUtils.formatDurationHMS(duration2.inWholeSeconds * 1000L)}").score = 7
+        objective.getScore("首个进入末地的玩家：${firstPlayerInTheEnd?.name}").score = 6
+        val duration3 = if (time2 == null) Duration.ZERO else endTime - time2
+        objective.getScore("阶段三•末地：${DurationFormatUtils.formatDurationHMS(duration3.inWholeSeconds * 1000L)}").score = 5
+        objective.displaySlot = DisplaySlot.SIDEBAR
     }
 
     /**
