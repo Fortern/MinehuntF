@@ -40,5 +40,5 @@ class GameRecord(
     /**
      * 特定模式的对局信息
      */
-    val specificData: GameSpecificData?,
+    val specificData: GameSpecificData,
 )
