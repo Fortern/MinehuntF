@@ -66,6 +66,8 @@ class VoteProcess(
 
     /**
      * 新的投票进程
+     *
+     * @param players 参与此次投票的玩家列表
      */
     fun newVote(players: List<Player>) {
         playerMap.clear()

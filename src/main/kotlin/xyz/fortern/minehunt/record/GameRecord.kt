@@ -13,6 +13,11 @@ class GameRecord(
     val id: Int,
 
     /**
+     * 游戏模式
+     */
+    val mode: GameMode,
+
+    /**
      * 开始事件
      */
     val startTime: Instant,
@@ -25,7 +30,7 @@ class GameRecord(
     /**
      * 总时长（毫秒）
      */
-    val totalTime: Duration,
+    val duration: Duration,
 
     /**
      * 结束方式
@@ -40,5 +45,5 @@ class GameRecord(
     /**
      * 特定模式的对局信息
      */
-    val specificData: GameSpecificData,
+    val specificData: GameDetails,
 )

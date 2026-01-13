@@ -26,7 +26,7 @@ class MinehuntRecord(
      * 第一个进入末地的玩家
      */
     val firstPlayerToTheEnd: UUID?,
-) : GameSpecificData {
+) : GameDetails {
     companion object {
         fun empty(): MinehuntRecord {
             return MinehuntRecord(null, null, null, null)

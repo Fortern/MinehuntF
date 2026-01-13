@@ -1,0 +1,20 @@
+storage:
+  # MYSQL, POSTGRES, SQLITE
+  type: SQLITE
+  mysql:
+    host: localhost
+    port: 3306
+    username: root
+    password:
+    database: minigame
+  postgres:
+    host: localhost
+    port: 3306
+    username: root
+    password:
+    database: minigame
+    schema: public
+  sqlite:
+    busy-timeout: 3000
+    path: "."
+    database: minigame

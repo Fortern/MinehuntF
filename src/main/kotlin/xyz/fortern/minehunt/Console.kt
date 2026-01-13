@@ -15,6 +15,7 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.OfflinePlayer
 import org.bukkit.Statistic
+import org.bukkit.World
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
@@ -30,6 +31,7 @@ import xyz.fortern.minehunt.record.FactionInfo
 import xyz.fortern.minehunt.record.FinishType
 import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.MinehuntRecord
+import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
@@ -52,6 +54,7 @@ import kotlin.time.toJavaInstant
 class Console(
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
+//    private val storageAdapter: SqlStorageAdapter,
 ) {
 
     // =========== 游戏流程 start ===========
@@ -120,17 +123,17 @@ class Console(
     /**
      * 主世界
      */
-    val overworld = Bukkit.getWorld("world")!!
+    val overworld: World
 
     /**
      * 下界
      */
-    val nether = Bukkit.getWorld("world_nether")!!
+    val nether: World
 
     /**
      * 末地
      */
-    val theEnd = Bukkit.getWorld("world_the_end")!!
+    val theEnd: World
 
     /**
      * 速通者队伍
@@ -312,7 +315,27 @@ class Console(
     }
 
     init {
+        val worlds = Bukkit.getWorlds()
+        overworld = worlds[0]
+        val overworldName = overworld.name
+        var netherTmp: World? = null
+        var theEndTmp: World? = null
+        worlds.forEach {
+            if (it.name == "${overworldName}_nether") {
+                netherTmp = it
+            } else if (it.name == "${overworldName}_the_end") {
+                theEndTmp = it
+            }
+        }
+        if (netherTmp == null || theEndTmp == null) {
+            throw RuntimeException("需要[下界]与[末地]维度才能进行游戏")
+        }
+        nether = netherTmp
+        theEnd = theEndTmp
+
+        // 初始化计分板
         initScoreboard()
+
         // 初始化 Minecraft 游戏规则
         overworld.worldBorder.size = 32.0
         overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
@@ -325,37 +348,49 @@ class Console(
         // 初始化队伍
         val scoreboard = Bukkit.getScoreboardManager()!!.mainScoreboard
 
-        scoreboard.getTeam("speedrunner")?.unregister()
-        speedrunnerTeam = scoreboard.registerNewTeam("speedrunner").also { t ->
-            t.color = ChatColor.BLUE
-            t.prefix = "[速通者]"
+        scoreboard.getTeam(Faction.SPEEDRUN.name)?.unregister()
+        speedrunnerTeam = scoreboard.registerNewTeam(Faction.SPEEDRUN.name).also {
+            it.color = ChatColor.BLUE
+            it.prefix = "[速通者]"
         }
-        scoreboard.getTeam("hunter")?.unregister()
-        hunterTeam = scoreboard.registerNewTeam("hunter").also { t ->
-            t.color = ChatColor.RED
-            t.prefix = "[猎人]"
+        scoreboard.getTeam(Faction.HUNTER.name)?.unregister()
+        hunterTeam = scoreboard.registerNewTeam(Faction.HUNTER.name).also {
+            it.color = ChatColor.RED
+            it.prefix = "[猎人]"
         }
-        scoreboard.getTeam("audience")?.unregister()
-        audienceTeam = scoreboard.registerNewTeam("audience").also { t ->
-            t.color = ChatColor.GRAY
-            t.prefix = "[观众]"
+        scoreboard.getTeam("AUDIENCE")?.unregister()
+        audienceTeam = scoreboard.registerNewTeam("AUDIENCE").also {
+            it.color = ChatColor.GRAY
+            it.prefix = "[观众]"
         }
     }
 
     /**
-     * 判断玩家是否为猎人
+     * 获取玩家所在的阵营
      */
-    fun isHunter(player: Player): Boolean = hunterTeam.hasEntry(player.name)
-
-    /**
-     * 判断是否为观众
-     */
-    fun isSpectator(player: Player): Boolean = audienceTeam.hasEntry(player.name)
-
-    /**
-     * 判断是否为速通者
-     */
-    fun isSpeedrunner(player: Player): Boolean = speedrunnerTeam.hasEntry(player.name)
+    fun getFaction(player: OfflinePlayer): Faction? {
+        return if (stage == GameStage.PROCESSING || stage == GameStage.OVER) {
+            if (speedrunnerSet.contains(player.uniqueId)) {
+                Faction.SPEEDRUN
+            } else if (hunterSet.contains(player.uniqueId)) {
+                Faction.HUNTER
+            } else {
+                null
+            }
+        } else if (stage == GameStage.PREPARING || stage == GameStage.COUNTDOWN) {
+            if (player !is Player) {
+                null
+            } else if (speedrunnerTeam.hasEntry(player.name)) {
+                Faction.SPEEDRUN
+            } else if (hunterTeam.hasEntry(player.name)) {
+                Faction.HUNTER
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+    }
 
     /**
      * 加入猎人阵营
@@ -363,7 +398,7 @@ class Console(
     fun joinHunter(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
             hunterTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入[猎人]"))
+            adventure.player(player).sendMessage(Component.text("你已加入${hunterTeam.color}[猎人]"))
         }
     }
 
@@ -373,7 +408,7 @@ class Console(
     fun joinSpeedrunner(player: Player) {
         if (stage == GameStage.PREPARING && beginningCountdown == null) {
             speedrunnerTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入[速通者]"))
+            adventure.player(player).sendMessage(Component.text("你已加入${speedrunnerTeam.color}[速通者]"))
         }
     }
 
@@ -383,7 +418,7 @@ class Console(
     fun joinAudience(player: Player) {
         if (stage == GameStage.PREPARING) {
             audienceTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入[观众]"))
+            adventure.player(player).sendMessage(Component.text("你已加入${audienceTeam.color}[观众]"))
         }
     }
 
@@ -562,6 +597,7 @@ class Console(
 
         val gameRecord = GameRecord(
             0,
+            xyz.fortern.minehunt.record.GameMode.MANHUNT,
             startTime,
             endTime,
             endTime - startTime,
@@ -583,6 +619,10 @@ class Console(
             MinehuntRecord.empty()
         )
         // TODO 游戏数据异步存入数据库
+//        val sqlTask = Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+//            gameId = storageAdapter.saveWholeGameRecord(gameRecord, null)
+//        })
+
     }
 
     /**
@@ -594,11 +634,13 @@ class Console(
             audience.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
             return
         }
-        if (!isHunter(player) && !isSpeedrunner(player)) {
+        val faction = getFaction(player)
+        if (faction == Faction.SPEEDRUN || faction == Faction.HUNTER) {
             audience.sendMessage(Component.text("只有游戏中的玩家才能投票"))
             return
         }
         // 新投票，统计参与投票的玩家，并通知所有玩家
+        // TODO 极端情况：所有游戏中的玩家都离线了，如何终止
         if (!voteForStop.isRunning()) {
             val players: MutableList<UUID> = mutableListOf()
             speedrunnerSet.forEach {
@@ -736,6 +778,7 @@ class Console(
         // 通用对局信息
         val gameRecord = GameRecord(
             gameId,
+            xyz.fortern.minehunt.record.GameMode.MANHUNT,
             startTime,
             endTime,
             endTime - startTime,
@@ -758,7 +801,7 @@ class Console(
                 )
             )
             .appendNewline()
-            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeSeconds * 1000L)}"))
+            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.inWholeSeconds * 1000L)}"))
             .appendNewline()
             .append(Component.text("胜者: ${winner?.displayName}"))
 
@@ -794,16 +837,6 @@ class Console(
                     killedByEntity[it] = n
                 }
             }
-            PlayerInMinehunt(
-                player.uniqueId,
-                gameId,
-                killEntity.mapKeys { it.key.key.toString() },
-                killedByEntity.mapKeys { it.key.key.toString() },
-                foodTmpMap.mapKeys { it.key.key.toString() },
-                toolsTmpMap.mapKeys { it.key.key.toString() },
-                weaponsTmpMap.mapKeys { it.key.key.toString() },
-                oreTmpMap.mapKeys { it.key.key.toString() }
-            )
             val playerInfo = Component.text()
                 .append(Component.text("=====你的数据=====", NamedTextColor.GREEN))
                 .appendNewline()
@@ -894,8 +927,24 @@ class Console(
                 )
                 .append(Component.text("----End.----", NamedTextColor.YELLOW))
             adventure.player(uuid).sendMessage(playerInfo)
+            val rank = if (winner == null) 0 else if (getFaction(player) == winner) 1 else 2
+            PlayerInGame(
+                player.uniqueId,
+                gameId,
+                rank,
+                PlayerInMinehunt(
+                    killEntity.mapKeys { it.key.key.toString() },
+                    killedByEntity.mapKeys { it.key.key.toString() },
+                    foodTmpMap.mapKeys { it.key.key.toString() },
+                    toolsTmpMap.mapKeys { it.key.key.toString() },
+                    weaponsTmpMap.mapKeys { it.key.key.toString() },
+                    oreTmpMap.mapKeys { it.key.key.toString() })
+            )
         }
         // TODO 游戏结果(gameRecord和playerRecords)写入数据库
+//        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+//            storageAdapter.saveWholeGameRecord(gameRecord, playerRecords)
+//        })
     }
 
     /**
@@ -980,7 +1029,8 @@ class Console(
         if (stage != GameStage.PROCESSING) return
 
         val uuid = player.uniqueId
-        if (isSpeedrunner(player)) {
+        val faction = getFaction(player)
+        if (faction == Faction.SPEEDRUN) {
             // 速通者置为旁观者模式，加入淘汰名单
             player.gameMode = GameMode.SPECTATOR
             outPlayers.add(uuid)
@@ -988,7 +1038,7 @@ class Console(
             if (outPlayers.size == speedrunnerSet.size) {
                 Bukkit.getScheduler().runTaskLater(plugin, Runnable { end(Faction.HUNTER, FinishType.FINISHED) }, 0)
             }
-        } else if (isHunter(player)) {
+        } else if (faction == Faction.HUNTER) {
             // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
             adventure.player(player).sendMessage(Component.text("等待重生"))
@@ -1045,7 +1095,7 @@ class Console(
         objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
         objective.getScore("对局ID: ${gameRecord.id}").score = 14
         objective.getScore("开始时间: ${startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
-        objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.totalTime.inWholeSeconds * 1000L)}").score = 12
+        objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.inWholeSeconds * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11
         val specificData = gameRecord.specificData as MinehuntRecord
         objective.getScore("${ChatColor.YELLOW}====对局阶段====").score = 10
@@ -1092,7 +1142,7 @@ class Console(
      * 给予猎人追踪指南针
      */
     fun giveCompassIfNeed(player: Player) {
-        if (stage == GameStage.PROCESSING && isHunter(player)) {
+        if (stage == GameStage.PROCESSING && getFaction(player) == Faction.HUNTER) {
             val items = player.inventory.all(Material.COMPASS)
             var have = false
             for (item in items) {
@@ -1115,7 +1165,8 @@ class Console(
      */
     fun onPlayerArrowHit(shooter: Player) {
         if (stage != GameStage.PROCESSING) return
-        if (isHunter(shooter) || isSpeedrunner(shooter)) {
+        val faction = getFaction(shooter)
+        if (faction == Faction.SPEEDRUN || faction == Faction.HUNTER) {
             val uniqueId = shooter.uniqueId
             arrowHits[uniqueId] = arrowHits.getOrDefault(uniqueId, 0) + 1
         }
@@ -1139,7 +1190,11 @@ class Console(
      * 游戏阶段
      */
     enum class GameStage {
-        PREPARING, COUNTDOWN, PROCESSING, OVER, REMAKE
+        PREPARING,
+        COUNTDOWN,
+        PROCESSING,
+        OVER,
+        REMAKE
     }
 
     /**

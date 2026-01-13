@@ -64,7 +64,8 @@ class GameListener(
     fun onPlayerQuit(event: PlayerQuitEvent) {
         val player = event.player
         if (console.stage == GameStage.COUNTDOWN) {
-            if (console.isHunter(player) || console.isSpeedrunner(player)) {
+            val faction = console.getFaction(player)
+            if (faction == Console.Faction.HUNTER || faction == Console.Faction.SPEEDRUN) {
                 console.interruptCountdownToStart()
             }
             // 将离开的玩家从team中移除
@@ -102,7 +103,7 @@ class GameListener(
 
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
-        if (console.isHunter(player)) {
+        if (console.getFaction(player) == Console.Faction.HUNTER) {
             if (console.waitHunterSpawning(player) || console.isRespawning(player))
                 event.isCancelled = true
         }
@@ -114,7 +115,10 @@ class GameListener(
     @EventHandler
     fun onHunterReadyTP(event: PlayerTeleportEvent) {
         val player = event.player
-        if (console.isHunter(player) && player.gameMode == GameMode.SPECTATOR && event.cause != PlayerTeleportEvent.TeleportCause.PLUGIN) {
+        if (console.getFaction(player) == Console.Faction.HUNTER
+            && console.isRespawning(player)
+            && event.cause != PlayerTeleportEvent.TeleportCause.PLUGIN
+        ) {
             event.isCancelled = true
         }
     }
@@ -189,7 +193,7 @@ class GameListener(
     fun onPlayerBedEnterEvent(event: PlayerBedEnterEvent) {
         if (console.stage == GameStage.PROCESSING
             && !console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL)
-            && console.isHunter(event.player)
+            && console.getFaction(event.player) == Console.Faction.HUNTER
             && event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE
         ) {
             // ALLOW 玩家入睡。这似乎是唯一阻止床爆炸的方法。
@@ -205,7 +209,7 @@ class GameListener(
         if (event.hand == EquipmentSlot.OFF_HAND || console.stage != GameStage.PROCESSING) return
         val block = event.clickedBlock ?: return
         if (block.world == console.nether || block.type != Material.RESPAWN_ANCHOR) return
-        if (!console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL) && console.isHunter(event.player)) {
+        if (!console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL) && console.getFaction(event.player) == Console.Faction.HUNTER) {
             event.setUseInteractedBlock(Event.Result.DENY)
         }
     }

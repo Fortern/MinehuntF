@@ -15,6 +15,14 @@ class Minehunt : JavaPlugin() {
         // 初始化
         this.instance = this
         this.adventure = BukkitAudiences.create(this)
+//        this.saveDefaultConfig()
+//        val config = this.getConfig()
+//
+//        val storageConfig = config.getConfigurationSection("storage")!!
+//        val storageType = storageConfig.getString("type")!!
+
+
+
         val console = Console(this, adventure)
 
         // 注册事件
