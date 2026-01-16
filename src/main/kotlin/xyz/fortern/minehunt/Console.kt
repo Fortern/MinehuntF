@@ -35,6 +35,7 @@ import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.rule.GameRules
 import xyz.fortern.minehunt.rule.RuleKey
+import xyz.fortern.minehunt.storage.StorageManager
 import xyz.fortern.minehunt.util.foodStats
 import xyz.fortern.minehunt.util.oreStats
 import xyz.fortern.minehunt.util.toolStats
@@ -54,7 +55,7 @@ import kotlin.time.toJavaInstant
 class Console(
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
-//    private val storageAdapter: SqlStorageAdapter,
+    private val storageManager: StorageManager,
 ) {
 
     // =========== 游戏流程 start ===========
@@ -134,6 +135,11 @@ class Console(
      * 末地
      */
     val theEnd: World
+
+    /**
+     * 世界种子
+     */
+    val worldSeeds: Map<String, Long>
 
     /**
      * 速通者队伍
@@ -320,18 +326,22 @@ class Console(
         val overworldName = overworld.name
         var netherTmp: World? = null
         var theEndTmp: World? = null
+        val seeds = HashMap<String, Long>()
         worlds.forEach {
             if (it.name == "${overworldName}_nether") {
                 netherTmp = it
             } else if (it.name == "${overworldName}_the_end") {
                 theEndTmp = it
             }
+            seeds[it.name] = it.seed
+
         }
         if (netherTmp == null || theEndTmp == null) {
             throw RuntimeException("需要[下界]与[末地]维度才能进行游戏")
         }
         nether = netherTmp
         theEnd = theEndTmp
+        worldSeeds = seeds
 
         // 初始化计分板
         initScoreboard()
@@ -363,6 +373,10 @@ class Console(
             it.color = ChatColor.GRAY
             it.prefix = "[观众]"
         }
+    }
+
+    private fun setGameId(id: Int) {
+        this.gameId = id
     }
 
     /**
@@ -594,13 +608,14 @@ class Console(
         }
         stage = GameStage.PROCESSING
         startTime = Clock.System.now()
+        endTime = startTime
 
         val gameRecord = GameRecord(
             0,
             xyz.fortern.minehunt.record.GameMode.MANHUNT,
             startTime,
             endTime,
-            endTime - startTime,
+            Duration.ZERO,
             FinishType.NULL,
             listOf(
                 FactionInfo(
@@ -616,12 +631,15 @@ class Console(
                     speedrunnerSet.toList(),
                 )
             ),
+            worldSeeds[overworld.name]!!,
+            worldSeeds,
             MinehuntRecord.empty()
         )
-        // TODO 游戏数据异步存入数据库
-//        val sqlTask = Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
-//            gameId = storageAdapter.saveWholeGameRecord(gameRecord, null)
-//        })
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            val id = storageManager.saveWholeGameRecord(gameRecord, null)
+            Bukkit.getScheduler().runTask(plugin, Runnable { setGameId(id) })
+        })
 
     }
 
@@ -784,6 +802,8 @@ class Console(
             endTime - startTime,
             finishType,
             listOf(factionInfo1, factionInfo2).sortedBy { it.rank },
+            worldSeeds[overworld.name]!!,
+            worldSeeds,
             MinehuntRecord(firstTimeInNether, firstTimeInTheEnd, firstPlayerInNether?.uniqueId, firstPlayerInTheEnd?.uniqueId)
         )
 
@@ -941,10 +961,9 @@ class Console(
                     oreTmpMap.mapKeys { it.key.key.toString() })
             )
         }
-        // TODO 游戏结果(gameRecord和playerRecords)写入数据库
-//        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
-//            storageAdapter.saveWholeGameRecord(gameRecord, playerRecords)
-//        })
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            storageManager.saveWholeGameRecord(gameRecord, playerRecords)
+        })
     }
 
     /**
@@ -1097,7 +1116,7 @@ class Console(
         objective.getScore("开始时间: ${startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
         objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.inWholeSeconds * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11
-        val specificData = gameRecord.specificData as MinehuntRecord
+        val specificData = gameRecord.details as MinehuntRecord
         objective.getScore("${ChatColor.YELLOW}====对局阶段====").score = 10
         val time1 = specificData.firstTimeToNether
         val duration1 = if (time1 == null) endTime - startTime else time1 - startTime

@@ -9,6 +9,7 @@ import org.bukkit.command.TabExecutor
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.Console
+import xyz.fortern.minehunt.config.ConfigManager
 import xyz.fortern.minehunt.rule.RuleKey
 
 /**
@@ -16,13 +17,15 @@ import xyz.fortern.minehunt.rule.RuleKey
  */
 class MinehuntCommand(
     private val console: Console,
+    private val configManager: ConfigManager,
     private val adventure: BukkitAudiences,
     private val plugin: JavaPlugin,
 ) : TabExecutor {
 
-    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give", "remake")
+    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give", "remake", "reload")
     private val teams: List<String> = listOf("hunter", "speedrunner", "audience")
-    private val rules: List<String> = listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire", "hunter_intentional", "speedrun_loot_up")
+    private val rules: List<String> =
+        listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire", "hunter_intentional", "speedrun_loot_up")
     private val items: List<String> = listOf("compass")
 
     private val helpMessages = listOf(
@@ -43,6 +46,8 @@ class MinehuntCommand(
             .append(Component.text("给予游戏中所需的特殊物品", NamedTextColor.WHITE)),
         Component.text("/minehunt remake  ", NamedTextColor.GOLD)
             .append(Component.text("重开游戏，只能在开始前或结束后执行", NamedTextColor.WHITE)),
+        Component.text("/minehunt reload  ", NamedTextColor.GOLD)
+            .append(Component.text("重新加载配置(管理员命令)", NamedTextColor.WHITE)),
     )
     private val ruleHelpMessages = listOf(
         Component.text("/minehunt rule <ruleItem>  ", NamedTextColor.GREEN)
@@ -98,38 +103,15 @@ class MinehuntCommand(
             }
 
         return when (args[0]) {
-            "help" -> {
-                onHelp(sender, flag)
-            }
-
-            "join" -> {
-                onJoin(sender, args, flag)
-            }
-
-            "leave" -> {
-                onLeave(sender, flag)
-            }
-
-            "rule" -> {
-                onRule(sender, args, flag)
-            }
-
-            "start" -> {
-                onStart(sender, flag)
-            }
-
-            "stop" -> {
-                onStop(sender, flag)
-            }
-
-            "give" -> {
-                onGive(sender, args, flag)
-            }
-
-            "remake" -> {
-                onRemake(sender, flag)
-            }
-
+            "help" -> onHelp(sender, flag)
+            "join" -> onJoin(sender, args, flag)
+            "leave" -> onLeave(sender, flag)
+            "rule" -> onRule(sender, args, flag)
+            "start" -> onStart(sender, flag)
+            "stop" -> onStop(sender, flag)
+            "give" -> onGive(sender, args, flag)
+            "remake" -> onRemake(sender, flag)
+            "reload" -> onReload(sender, flag)
             else -> {
                 if (flag) {
                     adventure.sender(sender).sendMessage(Component.text("错误的子命令"))
@@ -377,6 +359,22 @@ class MinehuntCommand(
                 console.voteForRemake(sender)
             } else {
                 adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
+            }
+        }
+        return null
+    }
+
+    /**
+     * 重载配置
+     */
+    fun onReload(sender: CommandSender, flag: Boolean): List<String>? {
+        if (flag) {
+            if (sender is Player && !sender.isOp) {
+                adventure.player(sender).sendMessage(
+                    Component.text("只有管理员可以执行", NamedTextColor.RED)
+                )
+            } else {
+                configManager.reload(false)
             }
         }
         return null

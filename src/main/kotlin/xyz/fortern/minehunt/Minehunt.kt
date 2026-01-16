@@ -4,7 +4,9 @@ import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.command.MinehuntCommand
+import xyz.fortern.minehunt.config.ConfigManager
 import xyz.fortern.minehunt.listener.GameListener
+import xyz.fortern.minehunt.storage.StorageManager
 
 class Minehunt : JavaPlugin() {
 
@@ -12,28 +14,25 @@ class Minehunt : JavaPlugin() {
     private lateinit var adventure: BukkitAudiences
 
     override fun onEnable() {
-        // 初始化
         this.instance = this
         this.adventure = BukkitAudiences.create(this)
-//        this.saveDefaultConfig()
-//        val config = this.getConfig()
-//
-//        val storageConfig = config.getConfigurationSection("storage")!!
-//        val storageType = storageConfig.getString("type")!!
 
+        // 处理配置
+        this.saveDefaultConfig()
+        val storageManager = StorageManager(this)
+        val configManager = ConfigManager(this, storageManager)
 
-
-        val console = Console(this, adventure)
+        // 创建控制台
+        val console = Console(this, adventure, storageManager)
 
         // 注册事件
         Bukkit.getPluginManager().registerEvents(GameListener(console, adventure), this)
 
         // 注册命令
-        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console, adventure, this))
+        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console, configManager, adventure, this))
     }
 
     override fun onDisable() {
         this.adventure.close()
     }
 }
-

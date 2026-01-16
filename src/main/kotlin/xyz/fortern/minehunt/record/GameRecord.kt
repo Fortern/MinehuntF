@@ -18,12 +18,12 @@ class GameRecord(
     val mode: GameMode,
 
     /**
-     * 开始事件
+     * 开始时间
      */
     val startTime: Instant,
 
     /**
-     * 结束事件
+     * 结束时间
      */
     val endTime: Instant,
 
@@ -43,7 +43,17 @@ class GameRecord(
     val result: List<FactionInfo>,
 
     /**
+     * 主世界种子
+     */
+    val overworldSeed: Long,
+
+    /**
+     * 各个世界的种子
+     */
+    val worldSeeds: Map<String, Long>,
+
+    /**
      * 特定模式的对局信息
      */
-    val specificData: GameDetails,
+    val details: GameDetails,
 )

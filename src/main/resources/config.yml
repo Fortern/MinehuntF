@@ -5,16 +5,15 @@ storage:
     host: localhost
     port: 3306
     username: root
-    password:
+    password: ""
     database: minigame
   postgres:
     host: localhost
     port: 3306
     username: root
-    password:
+    password: ""
     database: minigame
     schema: public
   sqlite:
     busy-timeout: 3000
-    path: "."
-    database: minigame
+    file-name: game.db
