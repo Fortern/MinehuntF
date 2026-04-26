@@ -188,7 +188,7 @@ class GameListener(
     @EventHandler
     fun onPlayerBedEnterEvent(event: PlayerBedEnterEvent) {
         if (console.stage == GameStage.PROCESSING
-            && console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL)
+            && !console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL)
             && console.isHunter(event.player)
             && event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE
         ) {
