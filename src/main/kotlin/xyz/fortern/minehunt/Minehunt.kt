@@ -6,6 +6,7 @@ import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.command.MinehuntCommand
 import xyz.fortern.minehunt.config.ConfigManager
 import xyz.fortern.minehunt.game.GameManager
+import xyz.fortern.minehunt.game.GameRecordService
 import xyz.fortern.minehunt.listener.GameLifecycleListener
 import xyz.fortern.minehunt.mode.manhunt.ManhuntGame
 import xyz.fortern.minehunt.mode.manhunt.ManhuntListener
@@ -17,6 +18,7 @@ class Minehunt : JavaPlugin() {
     private lateinit var instance: Minehunt
     private lateinit var adventure: BukkitAudiences
     private lateinit var gameManager: GameManager
+    private lateinit var gameRecords: GameRecordService
 
     override fun onEnable() {
         this.instance = this
@@ -27,8 +29,11 @@ class Minehunt : JavaPlugin() {
         val storageManager = StorageManager(this)
         val configManager = ConfigManager(this, storageManager)
 
-        gameManager = GameManager(this, adventure, storageManager)
-        gameManager.registerMode(GameMode.MANHUNT) { context -> ManhuntGame(context) }
+        gameRecords = GameRecordService(this, storageManager)
+        gameManager = GameManager(this, adventure)
+        gameManager.registerMode(GameMode.MANHUNT) {
+            ManhuntGame(gameManager, gameRecords, this, adventure)
+        }
         gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件
         Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager, adventure), this)
@@ -40,6 +45,7 @@ class Minehunt : JavaPlugin() {
 
     override fun onDisable() {
         if (this::gameManager.isInitialized) gameManager.close()
+        if (this::gameRecords.isInitialized) gameRecords.close()
         this.adventure.close()
     }
 }

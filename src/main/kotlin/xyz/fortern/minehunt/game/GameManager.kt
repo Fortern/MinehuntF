@@ -8,11 +8,13 @@ import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
 import xyz.fortern.minehunt.record.GameMode as GameModeId
-import xyz.fortern.minehunt.storage.StorageManager
+import java.util.UUID
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * 管理一台服务端进程中唯一一局游戏的通用生命周期。
@@ -23,13 +25,11 @@ import kotlin.time.Clock
 class GameManager(
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
-    storageManager: StorageManager,
 ) : AutoCloseable {
     private val state = GameStateMachine()
-    private val factories = LinkedHashMap<GameModeId, GameModeFactory>()
-    private val records = GameRecordService(plugin, storageManager)
-    private val serverTasks = GameTaskScope(plugin)
-    private var countdownTasks: GameTaskScope? = null
+    private val factories = LinkedHashMap<GameModeId, () -> GameMode>()
+    private var countdownTask: BukkitTask? = null
+    private var remakeTask: BukkitTask? = null
     private var remakeScheduled = false
 
     /** 当前准备阶段的成员关系；选择其他模式时会被清空。 */
@@ -39,8 +39,16 @@ class GameManager(
     lateinit var currentMode: GameMode
         private set
 
-    /** 已开始的会话；准备阶段和倒计时阶段为 `null`。 */
-    var activeGame: ActiveGame? = null
+    /** 实际开局时间；尚未开局时为 `null`。 */
+    var startedAt: Instant? = null
+        private set
+
+    /** 进入结束阶段的时间；游戏尚未结束时为 `null`。 */
+    var endedAt: Instant? = null
+        private set
+
+    /** 倒计时结束时固定的在线参赛者 UUID 快照。 */
+    var participants: Set<UUID> = emptySet()
         private set
 
     /** 当前游戏阶段的只读视图。 */
@@ -74,7 +82,10 @@ class GameManager(
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------投票结束，5秒后游戏重开--------"))
         }
-        serverTasks.runLater(5 * 20L) { Bukkit.shutdown() }
+        remakeTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
+            remakeTask = null
+            Bukkit.shutdown()
+        }, 5 * 20L)
     }, {
         Bukkit.getOnlinePlayers().forEach {
             adventure.player(it).sendMessage(Component.text("--------投票结束，票数不足--------"))
@@ -93,7 +104,7 @@ class GameManager(
     })
 
     /** 注册模式工厂；同一模式标识不能重复注册。 */
-    fun registerMode(id: GameModeId, factory: GameModeFactory) {
+    fun registerMode(id: GameModeId, factory: () -> GameMode) {
         check(id !in factories) { "Game mode $id is already registered" }
         factories[id] = factory
     }
@@ -108,17 +119,7 @@ class GameManager(
         val factory = factories[id] ?: error("Game mode $id is not registered")
         if (this::currentMode.isInitialized) currentMode.close()
         lobby.clear()
-        currentMode = factory.create(
-            ModeContext(
-                plugin,
-                adventure,
-                lobby,
-                records,
-                { phase },
-                { activeGame },
-                ::finish,
-            )
-        )
+        currentMode = factory()
     }
 
     /**
@@ -133,10 +134,8 @@ class GameManager(
         if (reason != null) return reason
 
         state.transitionTo(GamePhase.COUNTDOWN)
-        val scope = GameTaskScope(plugin)
-        countdownTasks = scope
         var countdown = 6
-        scope.runTimer(0, 20) {
+        countdownTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
             if (--countdown > 0) {
                 Bukkit.getOnlinePlayers().forEach {
                     adventure.player(it).showTitle(
@@ -150,37 +149,34 @@ class GameManager(
                     )
                 }
             } else {
-                countdownTasks?.close()
-                countdownTasks = null
+                countdownTask?.cancel()
+                countdownTask = null
                 startNow()
             }
-        }
+        }, 0, 20)
         return null
     }
 
     /** 取消尚未完成的开始倒计时并返回准备阶段。 */
     fun interruptCountdown() {
         if (phase != GamePhase.COUNTDOWN) return
-        countdownTasks?.close()
-        countdownTasks = null
+        countdownTask?.cancel()
+        countdownTask = null
         state.transitionTo(GamePhase.LOBBY)
     }
 
     private fun startNow() {
         check(phase == GamePhase.COUNTDOWN)
-        val session = ActiveGame(
-            currentMode.id,
-            Clock.System.now(),
-            currentMode.participants(),
-            GameTaskScope(plugin),
-        )
-        activeGame = session
+        startedAt = Clock.System.now()
+        endedAt = null
+        participants = currentMode.participants().toSet()
         try {
-            currentMode.start(session)
+            currentMode.start()
             state.transitionTo(GamePhase.RUNNING)
         } catch (error: Throwable) {
-            session.tasks.close()
-            activeGame = null
+            currentMode.cancelTasks()
+            startedAt = null
+            participants = emptySet()
             state.transitionTo(GamePhase.LOBBY)
             throw error
         }
@@ -193,10 +189,9 @@ class GameManager(
      */
     fun finish(outcome: GameOutcome) {
         if (phase != GamePhase.RUNNING) return
-        val session = activeGame ?: return
         state.transitionTo(GamePhase.ENDING)
-        session.endedAt = Clock.System.now()
-        session.tasks.close()
+        endedAt = Clock.System.now()
+        currentMode.cancelTasks()
         if (voteForStop.isRunning()) {
             voteForStop.cancel()
             Bukkit.getOnlinePlayers().forEach {
@@ -204,7 +199,7 @@ class GameManager(
             }
         }
         try {
-            currentMode.finish(session, outcome)
+            currentMode.finish(outcome)
         } finally {
             state.transitionTo(GamePhase.FINISHED)
         }
@@ -238,12 +233,11 @@ class GameManager(
      */
     fun voteForStop(player: Player) {
         val audience = adventure.player(player)
-        val session = activeGame
-        if (phase != GamePhase.RUNNING || session == null) {
+        if (phase != GamePhase.RUNNING) {
             audience.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
             return
         }
-        val eligibleVoters = currentMode.stopVoters(session)
+        val eligibleVoters = currentMode.stopVoters()
         if (player.uniqueId !in eligibleVoters) {
             audience.sendMessage(Component.text("只有游戏中的玩家才能投票", NamedTextColor.RED))
             return
@@ -311,12 +305,15 @@ class GameManager(
     }
 
     override fun close() {
-        countdownTasks?.close()
-        activeGame?.tasks?.close()
+        countdownTask?.cancel()
+        countdownTask = null
+        remakeTask?.cancel()
+        remakeTask = null
         if (voteForStop.isRunning()) voteForStop.cancel()
         if (voteForRemake.isRunning()) voteForRemake.cancel()
-        if (this::currentMode.isInitialized) currentMode.close()
-        records.close()
-        serverTasks.close()
+        if (this::currentMode.isInitialized) {
+            currentMode.cancelTasks()
+            currentMode.close()
+        }
     }
 }

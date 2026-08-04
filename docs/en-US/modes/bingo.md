@@ -14,7 +14,7 @@ Once implemented, Bingo will reuse this lifecycle:
 
 1. Select roles and configure Bingo rules in the lobby.
 2. Let the mode validate its participants and configuration before the five-second countdown.
-3. Snapshot participants and create a per-game task scope when the countdown finishes.
+3. Snapshot participants and let the Bingo mode explicitly manage its per-game tasks when the countdown finishes.
 4. Let the Bingo mode generate objectives, process completion events, and determine a winner.
 5. Cancel mode tasks and save shared records plus Bingo-specific details when the game ends.
 6. Use participant stop voting during the game and all-online-player remake voting after it ends.

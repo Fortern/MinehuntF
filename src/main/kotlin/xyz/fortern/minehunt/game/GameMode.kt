@@ -47,7 +47,7 @@ interface GameMode : AutoCloseable {
      */
     fun validateStart(): String?
 
-    /** 返回倒计时结束时应固定到 [ActiveGame] 中的在线参赛者 UUID。 */
+    /** 返回倒计时结束时应固定到 [GameManager.participants] 中的在线参赛者 UUID。 */
     fun participants(): Set<UUID>
 
     /**
@@ -55,13 +55,16 @@ interface GameMode : AutoCloseable {
      *
      * 模式可在默认参赛者快照基础上排除已淘汰玩家。
      */
-    fun stopVoters(activeGame: ActiveGame): Set<UUID> = activeGame.participants
+    fun stopVoters(): Set<UUID>
 
-    /** 初始化本局模式状态；模式任务必须注册到 [ActiveGame.tasks]。 */
-    fun start(activeGame: ActiveGame)
+    /** 初始化本局模式状态和模式专属任务。 */
+    fun start()
+
+    /** 取消当前模式为本局创建的全部 Bukkit 任务。 */
+    fun cancelTasks()
 
     /** 处理已经确定的结果、恢复玩家状态并提交最终记录。 */
-    fun finish(activeGame: ActiveGame, outcome: GameOutcome)
+    fun finish(outcome: GameOutcome)
 
     /** 游戏进行中根据开局参赛者快照恢复重新上线玩家的身份。 */
     fun rejoin(player: Player)

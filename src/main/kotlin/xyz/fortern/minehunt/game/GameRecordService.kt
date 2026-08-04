@@ -1,9 +1,12 @@
 package xyz.fortern.minehunt.game
 
 import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.storage.StorageManager
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level
 
 /**
@@ -24,22 +27,28 @@ class GameRecordService(
     private val plugin: JavaPlugin,
     private val storageManager: StorageManager,
 ) : AutoCloseable {
-    private val tasks = GameTaskScope(plugin)
+    private val tasks = ConcurrentHashMap.newKeySet<BukkitTask>()
+
+    @Volatile
+    private var closed = false
 
     /**
-     * 异步写入开局快照，并通过 [ActiveGame.initialRecordId] 发布生成的 ID。
+     * 异步写入开局快照，并返回用于发布生成 ID 的 future。
      */
-    fun saveInitial(activeGame: ActiveGame, record: GameRecord) {
-        tasks.runAsync {
+    fun saveInitial(record: GameRecord): CompletableFuture<Int> {
+        val recordId = CompletableFuture<Int>()
+        if (!runAsync {
             val id = try {
                 storageManager.saveWholeGameRecord(record, null)
             } catch (error: Throwable) {
                 plugin.logger.log(Level.SEVERE, "保存初始对局记录失败", error)
                 0
             }
-            activeGame.recordId = id
-            activeGame.initialRecordId.complete(id)
+            recordId.complete(id)
+        }) {
+            recordId.complete(0)
         }
+        return recordId
     }
 
     /**
@@ -48,14 +57,13 @@ class GameRecordService(
      * [recordFactory] 在线程外执行，只能使用调用前捕获的普通数据，不得在其中访问 Bukkit API。
      * 初始写入失败时会以 `0` 作为 ID，让存储层尝试直接插入最终记录。
      */
-    fun saveFinal(activeGame: ActiveGame, recordFactory: (Int) -> CompletedGameRecord) {
-        activeGame.initialRecordId.whenComplete { initialId, error ->
+    fun saveFinal(initialRecordId: CompletableFuture<Int>, recordFactory: (Int) -> CompletedGameRecord) {
+        initialRecordId.whenComplete { initialId, error ->
             val usableId = if (error == null) initialId else 0
-            tasks.runAsync {
+            runAsync {
                 try {
                     val completed = recordFactory(usableId)
-                    val finalId = storageManager.saveWholeGameRecord(completed.game, completed.players)
-                    if (finalId != 0) activeGame.recordId = finalId
+                    storageManager.saveWholeGameRecord(completed.game, completed.players)
                 } catch (saveError: Throwable) {
                     plugin.logger.log(Level.SEVERE, "保存最终对局记录失败", saveError)
                 }
@@ -63,5 +71,22 @@ class GameRecordService(
         }
     }
 
-    override fun close() = tasks.close()
+    @Synchronized
+    private fun runAsync(action: () -> Unit): Boolean {
+        if (closed) return false
+        return try {
+            tasks.add(plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable(action)))
+            true
+        } catch (error: IllegalStateException) {
+            false
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        if (closed) return
+        closed = true
+        tasks.forEach(BukkitTask::cancel)
+        tasks.clear()
+    }
 }

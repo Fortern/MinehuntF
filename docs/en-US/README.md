@@ -39,7 +39,7 @@ stateDiagram-v2
 - When the countdown finishes, the system snapshots the online participants and creates the active session.
 - The selected mode initializes roles and takes ownership of in-game events, mode tasks, and win detection.
 - Returning participants recover their original identity; players outside the session join as spectators.
-- Every per-game scheduled task belongs to the active session and is cancelled when it ends.
+- The selected mode explicitly owns its scheduled tasks, and the manager asks it to cancel them when the game ends.
 - An initial game record is written at the start, while the mode continues collecting its own data.
 - Non-eliminated participants may start a stop vote. Its voter list is fixed when it starts; 80% within 30 seconds ends the game as stopped with no winner.
 

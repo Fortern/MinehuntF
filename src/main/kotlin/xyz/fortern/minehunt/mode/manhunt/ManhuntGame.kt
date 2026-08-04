@@ -19,15 +19,16 @@ import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.CompassMeta
+import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import org.bukkit.scoreboard.Criteria
 import org.bukkit.scoreboard.DisplaySlot
 import org.bukkit.scoreboard.Team
-import xyz.fortern.minehunt.game.ActiveGame
 import xyz.fortern.minehunt.game.CompletedGameRecord
+import xyz.fortern.minehunt.game.GameManager
 import xyz.fortern.minehunt.game.GameOutcome
 import xyz.fortern.minehunt.game.GamePhase
-import xyz.fortern.minehunt.game.ModeContext
+import xyz.fortern.minehunt.game.GameRecordService
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.mode.manhunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.record.FactionInfo
@@ -42,6 +43,7 @@ import xyz.fortern.minehunt.util.weaponStats
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -56,9 +58,12 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
  * 该类维护猎人追踪、速通者淘汰、模式规则和统计记录；阶段转换、投票及任务清理由
  * [xyz.fortern.minehunt.game.GameManager] 负责。
  */
-class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
-    private val plugin = context.plugin
-    private val adventure: BukkitAudiences = context.adventure
+class ManhuntGame(
+    private val gameManager: GameManager,
+    private val records: GameRecordService,
+    private val plugin: JavaPlugin,
+    private val adventure: BukkitAudiences,
+) : RuntimeGameMode {
 
     override val id = GameModeId.MANHUNT
     override val roles = listOf(ROLE_HUNTER, ROLE_SPEEDRUNNER, ROLE_AUDIENCE)
@@ -229,7 +234,16 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      */
     private var compassRefreshTask: BukkitTask? = null
 
+    /** 延迟到当前 Bukkit 事件结束后执行的游戏结束任务。 */
+    private var finishTask: BukkitTask? = null
+
     // bukkit task end
+
+    /** 初始记录写入产生的 ID；最终记录会等待该 future 完成。 */
+    private var initialRecordId: CompletableFuture<Int> = CompletableFuture.completedFuture(0)
+
+    @Volatile
+    private var recordId: Int = 0
 
     companion object {
         private const val RULE_LIST = "rule-list"
@@ -299,7 +313,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 获取玩家所在的阵营
      */
     fun getFaction(player: OfflinePlayer): Faction? {
-        return if (context.phase == GamePhase.RUNNING || context.phase == GamePhase.ENDING || context.phase == GamePhase.FINISHED) {
+        return if (gameManager.phase == GamePhase.RUNNING || gameManager.phase == GamePhase.ENDING || gameManager.phase == GamePhase.FINISHED) {
             if (speedrunnerSet.contains(player.uniqueId)) {
                 Faction.SPEEDRUN
             } else if (hunterSet.contains(player.uniqueId)) {
@@ -308,7 +322,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
                 null
             }
         } else {
-            when (context.lobby.member(player.uniqueId)?.role) {
+            when (gameManager.lobby.member(player.uniqueId)?.role) {
                 ROLE_SPEEDRUNNER -> Faction.SPEEDRUN
                 ROLE_HUNTER -> Faction.HUNTER
                 else -> null
@@ -319,8 +333,8 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
     override fun isParticipantRole(role: String): Boolean = role == ROLE_HUNTER || role == ROLE_SPEEDRUNNER
 
     override fun assignRole(player: Player, role: String): Boolean {
-        if (context.phase != GamePhase.LOBBY || role !in roles) return false
-        context.lobby.assign(player.uniqueId, player.name, role)
+        if (gameManager.phase != GamePhase.LOBBY || role !in roles) return false
+        gameManager.lobby.assign(player.uniqueId, player.name, role)
         hunterTeam.removeEntry(player.name)
         speedrunnerTeam.removeEntry(player.name)
         audienceTeam.removeEntry(player.name)
@@ -342,7 +356,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
     }
 
     override fun removeFromLobby(player: Player) {
-        context.lobby.remove(player.uniqueId)
+        gameManager.lobby.remove(player.uniqueId)
         hunterTeam.removeEntry(player.name)
         speedrunnerTeam.removeEntry(player.name)
         audienceTeam.removeEntry(player.name)
@@ -352,7 +366,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 重进游戏
      */
     override fun rejoin(player: Player) {
-        if (context.phase != GamePhase.RUNNING) {
+        if (gameManager.phase != GamePhase.RUNNING) {
             return
         }
         if (hunterSet.contains(player.uniqueId)) {
@@ -373,23 +387,29 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
     }
 
     override fun validateStart(): String? {
-        val onlineSpeedrunners = context.lobby.members(ROLE_SPEEDRUNNER).count { Bukkit.getPlayer(it.uniqueId) != null }
+        val onlineSpeedrunners = gameManager.lobby.members(ROLE_SPEEDRUNNER).count { Bukkit.getPlayer(it.uniqueId) != null }
         return if (onlineSpeedrunners == 0) "速通者需要至少一位玩家" else null
     }
 
     override fun participants(): Set<UUID> =
-        context.lobby.allMembers()
+        gameManager.lobby.allMembers()
             .filter { isParticipantRole(it.role) && Bukkit.getPlayer(it.uniqueId) != null }
             .mapTo(LinkedHashSet()) { it.uniqueId }
 
-    override fun stopVoters(activeGame: ActiveGame): Set<UUID> = activeGame.participants - outPlayers
+    override fun stopVoters(): Set<UUID> = gameManager.participants - outPlayers
 
     /**
      * 开始游戏
      *
      * 游戏阶段由 COUNTDOWN 变为 PROCESSING
      */
-    override fun start(activeGame: ActiveGame) {
+    override fun start() {
+        firstTimeInNether = null
+        firstTimeInTheEnd = null
+        firstPlayerInNether = null
+        firstPlayerInTheEnd = null
+        recordId = 0
+        initialRecordId = CompletableFuture.completedFuture(0)
         speedrunnerSet.clear()
         hunterSet.clear()
         outPlayers.clear()
@@ -399,7 +419,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
         arrowHits.clear()
 
         // 速通者更改为生存模式，并加入speedrunnerList
-        context.lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
+        gameManager.lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
             Bukkit.getPlayer(member.uniqueId)?.let { speedrunnerSet.add(it.uniqueId) }
         }
         if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
@@ -439,7 +459,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
         speedrunnerList = speedrunnerSet.toList()
 
         // 将猎人传送到世界底部，且指南针开始有所指向
-        context.lobby.members(ROLE_HUNTER).forEach { member ->
+        gameManager.lobby.members(ROLE_HUNTER).forEach { member ->
             Bukkit.getPlayer(member.uniqueId)?.let {
                 hunterSet.add(it.uniqueId)
                 it.teleport(Location(overworld, 0.0, overworld.minHeight - 2.0, 0.0))
@@ -462,7 +482,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
         }
 
         // 猎人出生倒计时Task
-        hunterSpawnCD = activeGame.tasks.runLater(gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_READY_CD) * 20L) {
+        hunterSpawnCD = plugin.server.scheduler.runTaskLater(plugin, Runnable {
             // 猎人设置初始状态
             hunterSet.forEach {
                 val player = Bukkit.getPlayer(it) ?: return@forEach
@@ -473,24 +493,30 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
             }
 
             // “自动更新指南针”任务开始运行
-            compassRefreshTask = activeGame.tasks.runTimer(0, 5, refreshCompasses)
+            compassRefreshTask = plugin.server.scheduler.runTaskTimer(
+                plugin,
+                Runnable(refreshCompasses),
+                0,
+                5,
+            )
 
             // 通知速通者
             speedrunnerSet.forEach {
                 adventure.player(it).sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED))
             }
             hunterSpawnCD = null
-        }
+        }, gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_READY_CD) * 20L)
 
         scoreboard.getObjective("rule-list")!!.displaySlot = null
         Bukkit.getOnlinePlayers().forEach { player ->
             adventure.player(player).sendMessage(Component.text("--------游戏开始-------", NamedTextColor.GREEN))
         }
+        val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
         val gameRecord = GameRecord(
             0,
             GameModeId.MANHUNT,
-            activeGame.startedAt,
-            activeGame.startedAt,
+            startTime,
+            startTime,
             Duration.ZERO,
             FinishType.NULL,
             listOf(
@@ -511,17 +537,19 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
             worldSeeds,
             MinehuntRecord.empty()
         )
-        context.records.saveInitial(activeGame, gameRecord)
+        initialRecordId = records.saveInitial(gameRecord).also { future ->
+            future.thenAccept { recordId = it }
+        }
     }
 
     /**
      * 结束处理
      */
-    override fun finish(activeGame: ActiveGame, outcome: GameOutcome) {
+    override fun finish(outcome: GameOutcome) {
         val winner = outcome.winnerRole?.let(Faction::fromRole)
         val finishType = outcome.finishType
-        val startTime = activeGame.startedAt
-        val endTime = activeGame.endedAt ?: Clock.System.now()
+        val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
+        val endTime = gameManager.endedAt ?: Clock.System.now()
 
         hunterSpawnCD = null
         compassRefreshTask = null
@@ -576,7 +604,8 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
                 modeDetails,
             )
         }
-        val gameRecord = buildGameRecord(activeGame.recordId)
+        val displayedRecordId = recordId
+        val gameRecord = buildGameRecord(displayedRecordId)
 
         // 计分板显示
         overScoreboard(gameRecord, winner)
@@ -584,7 +613,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
         val resultInfo = Component.text()
             .append(Component.text("=====对局信息=====", NamedTextColor.GREEN))
             .appendNewline()
-            .append(Component.text(if (activeGame.recordId == 0) "对局ID: 保存中" else "对局ID: ${activeGame.recordId}"))
+            .append(Component.text(if (displayedRecordId == 0) "对局ID: 保存中" else "对局ID: $displayedRecordId"))
             .appendNewline()
             .append(
                 Component.text(
@@ -732,7 +761,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
                     oreTmpMap.mapKeys { it.key.key.toString() })
             )
         }
-        context.records.saveFinal(activeGame) { recordId ->
+        records.saveFinal(initialRecordId) { recordId ->
             CompletedGameRecord(
                 buildGameRecord(recordId),
                 playerRecords.map {
@@ -756,7 +785,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 让该玩家所追踪的目标切换到下一个
      */
     fun trackNextPlayer(hunter: Player) {
-        if (context.phase != GamePhase.RUNNING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
         val i = trackRunnerMap[hunter.uniqueId] ?: return
         if (speedrunnerList.isEmpty()) return
 
@@ -821,7 +850,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 处理玩家死亡
      */
     fun handlePlayerDeath(player: Player) {
-        if (context.phase != GamePhase.RUNNING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
 
         val uuid = player.uniqueId
         val faction = getFaction(player)
@@ -831,20 +860,21 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
             outPlayers.add(uuid)
             // 如给所有hunter都淘汰，则游戏结束
             if (outPlayers.size == speedrunnerSet.size) {
-                context.activeGame?.tasks?.runLater(0) {
-                    context.finish(GameOutcome(ROLE_HUNTER, FinishType.FINISHED))
-                }
+                finishTask?.cancel()
+                finishTask = plugin.server.scheduler.runTask(plugin, Runnable {
+                    finishTask = null
+                    gameManager.finish(GameOutcome(ROLE_HUNTER, FinishType.FINISHED))
+                })
             }
         } else if (faction == Faction.HUNTER) {
             // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
             adventure.player(player).sendMessage(Component.text("等待重生"))
-            hunterRespawnTasks[uuid] = context.activeGame?.tasks?.runLater(
-                gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_RESPAWN_CD) * 20L
-            ) {
+            hunterRespawnTasks.remove(uuid)?.cancel()
+            hunterRespawnTasks[uuid] = plugin.server.scheduler.runTaskLater(plugin, Runnable {
                 player.gameMode = GameMode.SURVIVAL
                 hunterRespawnTasks.remove(uuid)
-            } ?: return
+            }, gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_RESPAWN_CD) * 20L)
         }
     }
 
@@ -943,7 +973,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 给予猎人追踪指南针
      */
     fun giveCompassIfNeed(player: Player) {
-        if (context.phase == GamePhase.RUNNING && getFaction(player) == Faction.HUNTER) {
+        if (gameManager.phase == GamePhase.RUNNING && getFaction(player) == Faction.HUNTER) {
             val items = player.inventory.all(Material.COMPASS)
             var have = false
             for (item in items) {
@@ -965,7 +995,7 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
      * 玩家箭矢命中实体时进行记录
      */
     fun onPlayerArrowHit(shooter: Player) {
-        if (context.phase != GamePhase.RUNNING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
         val faction = getFaction(shooter)
         if (faction == Faction.SPEEDRUN || faction == Faction.HUNTER) {
             val uniqueId = shooter.uniqueId
@@ -1006,7 +1036,19 @@ class ManhuntGame(private val context: ModeContext) : RuntimeGameMode {
         return true
     }
 
+    override fun cancelTasks() {
+        hunterSpawnCD?.cancel()
+        hunterSpawnCD = null
+        compassRefreshTask?.cancel()
+        compassRefreshTask = null
+        finishTask?.cancel()
+        finishTask = null
+        hunterRespawnTasks.values.forEach(BukkitTask::cancel)
+        hunterRespawnTasks.clear()
+    }
+
     override fun close() {
+        cancelTasks()
         listOf(speedrunnerTeam, hunterTeam, audienceTeam).forEach { team ->
             runCatching(team::unregister)
         }
