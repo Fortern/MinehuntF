@@ -405,6 +405,7 @@ class ManhuntGame(
      * 游戏阶段由 COUNTDOWN 变为 PROCESSING
      */
     override fun start() {
+        // 初始化模式相关的数据
         firstTimeInNether = null
         firstTimeInTheEnd = null
         firstPlayerInNether = null
@@ -418,12 +419,6 @@ class ManhuntGame(
         playerLocInWorld.clear()
         playerLocInNether.clear()
         arrowHits.clear()
-
-        // 速通者更改为生存模式，并加入speedrunnerList
-        gameManager.lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
-            Bukkit.getPlayer(member.uniqueId)?.let { speedrunnerSet.add(it.uniqueId) }
-        }
-        if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
 
         // 修改游戏规则
         overworld.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, true)
@@ -453,13 +448,17 @@ class ManhuntGame(
             it.setStatistic(Statistic.USE_ITEM, Material.CROSSBOW, 0)
         }
 
-        // 速通者更改为生存模式，并加入speedrunnerList
-        speedrunnerSet.forEach { uniqueId ->
-            Bukkit.getPlayer(uniqueId)?.let { it.gameMode = GameMode.SURVIVAL }
+        // 固定speedrunnerSet和speedrunnerList，速通者状态修改
+        gameManager.lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
+            Bukkit.getPlayer(member.uniqueId)?.let {
+                speedrunnerSet.add(it.uniqueId)
+                it.gameMode = GameMode.SURVIVAL
+            }
         }
+        if (speedrunnerSet.isEmpty()) throw RuntimeException("No Speedrunner")
         speedrunnerList = speedrunnerSet.toList()
 
-        // 将猎人传送到世界底部，且指南针开始有所指向
+        // 固定hunterSet，将猎人传送到世界底部，且指南针开始有所指向
         gameManager.lobby.members(ROLE_HUNTER).forEach { member ->
             Bukkit.getPlayer(member.uniqueId)?.let {
                 hunterSet.add(it.uniqueId)
