@@ -66,6 +66,7 @@ class ManhuntGame(
 ) : RuntimeGameMode {
 
     override val id = GameModeId.MANHUNT
+    override val listener = ManhuntListener(gameManager)
     override val roles = listOf(ROLE_HUNTER, ROLE_SPEEDRUNNER, ROLE_AUDIENCE)
     override val spectatorRole = ROLE_AUDIENCE
     override val rules = ManhuntRules()
@@ -1048,7 +1049,6 @@ class ManhuntGame(
     }
 
     override fun close() {
-        cancelTasks()
         listOf(speedrunnerTeam, hunterTeam, audienceTeam).forEach { team ->
             runCatching(team::unregister)
         }

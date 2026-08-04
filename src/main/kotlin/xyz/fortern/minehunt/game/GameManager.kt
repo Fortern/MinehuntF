@@ -7,6 +7,7 @@ import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.VoteProcess
@@ -117,9 +118,18 @@ class GameManager(
     fun selectMode(id: GameModeId) {
         check(phase == GamePhase.LOBBY) { "Game mode can only be selected in the lobby" }
         val factory = factories[id] ?: error("Game mode $id is not registered")
-        if (this::currentMode.isInitialized) currentMode.close()
+        deselectCurrentMode()
         lobby.clear()
         currentMode = factory()
+        plugin.server.pluginManager.registerEvents(currentMode.listener, plugin)
+    }
+
+    /** 注销旧模式监听器并释放模式资源。 */
+    private fun deselectCurrentMode() {
+        if (!this::currentMode.isInitialized) return
+        HandlerList.unregisterAll(currentMode.listener)
+        currentMode.cancelTasks()
+        currentMode.close()
     }
 
     /**
@@ -311,9 +321,6 @@ class GameManager(
         remakeTask = null
         if (voteForStop.isRunning()) voteForStop.cancel()
         if (voteForRemake.isRunning()) voteForRemake.cancel()
-        if (this::currentMode.isInitialized) {
-            currentMode.cancelTasks()
-            currentMode.close()
-        }
+        deselectCurrentMode()
     }
 }

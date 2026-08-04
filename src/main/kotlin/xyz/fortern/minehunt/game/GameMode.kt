@@ -1,6 +1,7 @@
 package xyz.fortern.minehunt.game
 
 import org.bukkit.entity.Player
+import org.bukkit.event.Listener
 import xyz.fortern.minehunt.record.GameMode as GameModeId
 import xyz.fortern.minehunt.rule.RuleSet
 import java.util.UUID
@@ -14,6 +15,9 @@ import java.util.UUID
 interface GameMode : AutoCloseable {
     /** 用于注册和持久化的稳定模式标识。 */
     val id: GameModeId
+
+    /** 只在当前模式被选中期间注册的 Bukkit 事件监听器。 */
+    val listener: Listener
 
     /** 可供命令选择的稳定角色标识；应包含 [spectatorRole]。 */
     val roles: List<String>

@@ -21,10 +21,11 @@ stateDiagram-v2
 
 ### 1. Lobby (LOBBY)
 
-- On startup, the plugin initializes storage and creates the selected mode.
+- On startup, the plugin initializes storage, creates the selected mode, and registers that mode's own event listener.
 - A joining player is placed in Adventure mode and assigned the mode's spectator role by default.
 - Players can select roles and inspect or change the current mode's rules.
 - The current implementation selects Manhunt on startup and does not expose a mode-selection command.
+- When a mode is switched or closed, the manager unregisters its event listener before releasing the mode's resources.
 - Players may start a remake vote. Its voter list is all players online when the vote starts; it passes at 50% within 30 seconds.
 
 ### 2. Start countdown (COUNTDOWN)

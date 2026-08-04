@@ -9,7 +9,6 @@ import xyz.fortern.minehunt.game.GameManager
 import xyz.fortern.minehunt.game.GameRecordService
 import xyz.fortern.minehunt.listener.GameLifecycleListener
 import xyz.fortern.minehunt.mode.manhunt.ManhuntGame
-import xyz.fortern.minehunt.mode.manhunt.ManhuntListener
 import xyz.fortern.minehunt.record.GameMode
 import xyz.fortern.minehunt.storage.StorageManager
 
@@ -37,7 +36,6 @@ class Minehunt : JavaPlugin() {
         gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件
         Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager, adventure), this)
-        Bukkit.getPluginManager().registerEvents(ManhuntListener(gameManager), this)
 
         // 注册命令
         Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(gameManager, configManager, adventure, this))

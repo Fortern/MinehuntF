@@ -32,7 +32,8 @@ import java.util.concurrent.ThreadLocalRandom
 /**
  * 只属于 Manhunt 的 Bukkit 事件适配层。
  *
- * 每个处理器都会先确认当前模式仍是 [ManhuntGame]，避免未来注册其他模式后发生事件串扰。
+ * [GameManager] 只在 Manhunt 被选中期间注册该监听器；处理器仍会校验当前模式，
+ * 避免模式切换边界上的事件串扰。
  */
 class ManhuntListener(
     private val gameManager: GameManager,
