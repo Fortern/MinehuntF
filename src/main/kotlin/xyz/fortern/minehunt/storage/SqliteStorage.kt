@@ -4,9 +4,9 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import org.intellij.lang.annotations.Language
 import org.sqlite.SQLiteDataSource
+import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.GameDetails
 import xyz.fortern.minehunt.record.GameRecord
-import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import java.sql.Connection
 import java.sql.SQLException
@@ -185,9 +185,9 @@ class SqliteStorage(
         }
         statement1.use {
             it.setString(1, gameRecord.mode.toString())
-            it.setLong(2, gameRecord.startTime.toEpochMilliseconds())
-            it.setLong(3, gameRecord.endTime.toEpochMilliseconds())
-            it.setLong(4, gameRecord.duration.inWholeMilliseconds)
+            it.setLong(2, gameRecord.startTime.toEpochMilli())
+            it.setLong(3, gameRecord.endTime.toEpochMilli())
+            it.setLong(4, gameRecord.duration.toMillis())
             it.setString(5, gameRecord.finishType.toString())
             it.setLong(6, gameRecord.overworldSeed)
             it.setString(7, gson.toJson(gameRecord.worldSeeds))
@@ -221,8 +221,8 @@ class SqliteStorage(
                         statement.setNull(1, Types.BIGINT)
                         statement.setNull(1 + 5, Types.BIGINT)
                     } else {
-                        statement.setLong(1, it.toEpochMilliseconds())
-                        statement.setLong(1 + 5, it.toEpochMilliseconds())
+                        statement.setLong(1, it.toEpochMilli())
+                        statement.setLong(1 + 5, it.toEpochMilli())
                     }
                 }
                 gameDetails.firstTimeToTheEnd.let {
@@ -230,8 +230,8 @@ class SqliteStorage(
                         statement.setNull(2, Types.BIGINT)
                         statement.setNull(2 + 5, Types.BIGINT)
                     } else {
-                        statement.setLong(2, it.toEpochMilliseconds())
-                        statement.setLong(2 + 5, it.toEpochMilliseconds())
+                        statement.setLong(2, it.toEpochMilli())
+                        statement.setLong(2 + 5, it.toEpochMilli())
                     }
                 }
                 var playerUUID = gameDetails.firstPlayerToNether?.toString()

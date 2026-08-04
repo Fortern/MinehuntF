@@ -14,10 +14,10 @@ import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.logging.Logger
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 
 class SqliteStorageTest {
     @Test
@@ -31,13 +31,13 @@ class SqliteStorageTest {
         val storage = SqliteStorage(dataSource, Logger.getLogger("SqliteStorageTest"))
         storage.prepareSchema()
 
-        val startedAt = Instant.fromEpochMilliseconds(1_000)
+        val startedAt = Instant.ofEpochMilli(1_000)
         val initial = GameRecord(
             0,
             GameMode.MANHUNT,
             startedAt,
             startedAt,
-            0.seconds,
+            Duration.ZERO,
             FinishType.NULL,
             emptyList(),
             42L,
@@ -52,8 +52,8 @@ class SqliteStorageTest {
             gameId,
             GameMode.MANHUNT,
             startedAt,
-            Instant.fromEpochMilliseconds(6_000),
-            5.seconds,
+            Instant.ofEpochMilli(6_000),
+            Duration.ofSeconds(6),
             FinishType.FINISHED,
             listOf(FactionInfo("HUNTER", ChatColor.RED, 1, listOf(playerId))),
             42L,

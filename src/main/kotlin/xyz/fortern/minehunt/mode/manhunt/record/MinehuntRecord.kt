@@ -1,9 +1,8 @@
 package xyz.fortern.minehunt.mode.manhunt.record
 
 import xyz.fortern.minehunt.record.GameDetails
-
-import java.util.*
-import kotlin.time.Instant
+import java.time.Instant
+import java.util.UUID
 
 /**
  * 猎人模式对局详情

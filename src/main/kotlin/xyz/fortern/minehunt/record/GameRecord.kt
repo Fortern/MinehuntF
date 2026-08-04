@@ -1,7 +1,7 @@
 package xyz.fortern.minehunt.record
 
-import kotlin.time.Duration
-import kotlin.time.Instant
+import java.time.Duration
+import java.time.Instant
 
 /**
  * 代表一个游戏记录

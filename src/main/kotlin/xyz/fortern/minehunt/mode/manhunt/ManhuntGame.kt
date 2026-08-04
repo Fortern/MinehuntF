@@ -61,16 +61,14 @@ import xyz.fortern.minehunt.util.foodStats
 import xyz.fortern.minehunt.util.oreStats
 import xyz.fortern.minehunt.util.toolStats
 import xyz.fortern.minehunt.util.weaponStats
+import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
-import kotlin.time.Clock
-import kotlin.time.Duration
-import kotlin.time.Instant
-import kotlin.time.toJavaInstant
 import xyz.fortern.minehunt.game.GameMode as RuntimeGameMode
 import xyz.fortern.minehunt.record.GameMode as GameModeId
 
@@ -369,10 +367,12 @@ class ManhuntGame(
                 hunterTeam.addEntry(player.name)
                 adventure.player(player).sendMessage(Component.text("你已加入${hunterTeam.color}[猎人]"))
             }
+
             ROLE_SPEEDRUNNER -> {
                 speedrunnerTeam.addEntry(player.name)
                 adventure.player(player).sendMessage(Component.text("你已加入${speedrunnerTeam.color}[速通者]"))
             }
+
             ROLE_AUDIENCE -> {
                 audienceTeam.addEntry(player.name)
                 adventure.player(player).sendMessage(Component.text("你已加入${audienceTeam.color}[观众]"))
@@ -581,7 +581,7 @@ class ManhuntGame(
         val winner = outcome.winnerRole?.let(Faction::fromRole)
         val finishType = outcome.finishType
         val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
-        val endTime = gameManager.endedAt ?: Clock.System.now()
+        val endTime = gameManager.endedAt ?: Instant.now()
 
         hunterSpawnCD = null
         compassRefreshTask = null
@@ -608,7 +608,7 @@ class ManhuntGame(
             hunterSet.toList()
         )
 
-        // 速通者阵营消息信息
+        // 速通者阵营信息
         val factionInfo2 = FactionInfo(
             Faction.SPEEDRUN.name,
             speedrunnerTeam.color,
@@ -628,7 +628,7 @@ class ManhuntGame(
                 GameModeId.MANHUNT,
                 startTime,
                 endTime,
-                endTime - startTime,
+                Duration.between(startTime, endTime),
                 finishType,
                 listOf(factionInfo1, factionInfo2).sortedBy { it.rank },
                 worldSeeds[overworld.name]!!,
@@ -649,11 +649,11 @@ class ManhuntGame(
             .appendNewline()
             .append(
                 Component.text(
-                    "开始时间: ${startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}"
+                    "开始时间: ${startTime.atZone(ZoneId.systemDefault()).format(formatter)}"
                 )
             )
             .appendNewline()
-            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.inWholeSeconds * 1000L)}"))
+            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.seconds * 1000L)}"))
             .appendNewline()
             .append(Component.text("胜者: ${winner?.displayName}"))
 
@@ -957,21 +957,22 @@ class ManhuntGame(
         )
         objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
         objective.getScore("对局ID: ${gameRecord.id}").score = 14
-        objective.getScore("开始时间: ${gameRecord.startTime.toJavaInstant().atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
-        objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.inWholeSeconds * 1000L)}").score = 12
+        objective.getScore("开始时间: ${gameRecord.startTime.atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
+        objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.toSeconds() * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11
         val specificData = gameRecord.details as MinehuntRecord
         objective.getScore("${ChatColor.YELLOW}====对局阶段====").score = 10
         val time1 = specificData.firstTimeToNether
-        val duration1 = if (time1 == null) gameRecord.duration else time1 - gameRecord.startTime
-        objective.getScore("阶段一•主世界：${DurationFormatUtils.formatDurationHMS(duration1.inWholeSeconds * 1000L)}").score = 9
+        val duration1 = if (time1 == null) gameRecord.duration else Duration.between(gameRecord.startTime, time1)
+        objective.getScore("阶段一•主世界：${DurationFormatUtils.formatDurationHMS(duration1.toSeconds() * 1000L)}").score = 9
         objective.getScore("首个进入下界的玩家：${firstPlayerInNether?.name}").score = 8
         val time2 = specificData.firstTimeToTheEnd
-        val duration2 = if (time1 == null) Duration.ZERO else if (time2 != null) time2 - time1 else gameRecord.endTime - time1
-        objective.getScore("阶段二•下界：${DurationFormatUtils.formatDurationHMS(duration2.inWholeSeconds * 1000L)}").score = 7
+        val duration2 =
+            if (time1 == null) Duration.ZERO else if (time2 != null) Duration.between(time1, time2) else Duration.between(time1, gameRecord.endTime)
+        objective.getScore("阶段二•下界：${DurationFormatUtils.formatDurationHMS(duration2.seconds * 1000L)}").score = 7
         objective.getScore("首个进入末地的玩家：${firstPlayerInTheEnd?.name}").score = 6
-        val duration3 = if (time2 == null) Duration.ZERO else gameRecord.endTime - time2
-        objective.getScore("阶段三•末地：${DurationFormatUtils.formatDurationHMS(duration3.inWholeSeconds * 1000L)}").score = 5
+        val duration3 = if (time2 == null) Duration.ZERO else Duration.between(time2, gameRecord.endTime)
+        objective.getScore("阶段三•末地：${DurationFormatUtils.formatDurationHMS(duration3.seconds * 1000L)}").score = 5
         objective.displaySlot = DisplaySlot.SIDEBAR
     }
 
@@ -990,12 +991,12 @@ class ManhuntGame(
             if (toWorld == nether) {
                 if (firstPlayerInNether == null) {
                     firstPlayerInNether = player
-                    firstTimeInNether = Clock.System.now()
+                    firstTimeInNether = Instant.now()
                 }
             } else if (toWorld == theEnd) {
                 if (firstPlayerInTheEnd == null) {
                     firstPlayerInTheEnd = player
-                    firstTimeInTheEnd = Clock.System.now()
+                    firstTimeInTheEnd = Instant.now()
                 }
             }
         }
@@ -1008,8 +1009,8 @@ class ManhuntGame(
         if (gameManager.phase == GamePhase.RUNNING && getFaction(player) == Faction.HUNTER) {
             val items = player.inventory.all(Material.COMPASS)
             var have = false
-            for (item in items) {
-                val lore = item.value.itemMeta!!.lore
+            for ((_, item) in items) {
+                val lore = item.itemMeta!!.lore
                 if (lore.isNullOrEmpty()) continue
                 val loreContent = lore[0]
                 if (loreContent.contains(compassFlag)) {
@@ -1045,7 +1046,7 @@ class ManhuntGame(
     /**
      * 猎人是否在等待出生
      */
-    fun waitHunterSpawning(player: Player): Boolean {
+    fun waitHunterSpawning(): Boolean {
         return hunterSpawnCD != null
     }
 
@@ -1124,7 +1125,7 @@ class ManhuntGame(
             val player = event.player
             // 猎人等待出生时，或等待复活时，阻止其移动
             if (getFaction(player) == Faction.HUNTER) {
-                if (waitHunterSpawning(player) || isRespawning(player))
+                if (waitHunterSpawning() || isRespawning(player))
                     event.isCancelled = true
             }
         }
@@ -1249,4 +1250,4 @@ class ManhuntGame(
     }
 }
 
-val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss'['Z']'")
+val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")

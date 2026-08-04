@@ -12,9 +12,8 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
+import java.time.Instant
 import java.util.*
-import kotlin.time.Clock
-import kotlin.time.Instant
 import xyz.fortern.minehunt.record.GameMode as GameModeId
 
 /**
@@ -173,7 +172,7 @@ class GameManager(
 
     private fun startNow() {
         check(phase == GamePhase.COUNTDOWN)
-        startedAt = Clock.System.now()
+        startedAt = Instant.now()
         endedAt = null
         participants = currentMode.participants().toSet()
         try {
@@ -196,7 +195,7 @@ class GameManager(
     fun finish(outcome: GameOutcome) {
         if (phase != GamePhase.RUNNING) return
         state.transitionTo(GamePhase.ENDING)
-        endedAt = Clock.System.now()
+        endedAt = Instant.now()
         currentMode.cancelTasks()
         if (voteForStop.isRunning()) {
             voteForStop.cancel()
@@ -211,7 +210,7 @@ class GameManager(
         }
     }
 
-    /** 仅在准备阶段将角色分配委托给当前模式。 */
+    /** 玩家在准备阶段选择身份 */
     fun assignRole(player: Player, role: String): Boolean {
         if (phase != GamePhase.LOBBY) return false
         return currentMode.assignRole(player, role)
