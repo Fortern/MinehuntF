@@ -29,6 +29,7 @@ import xyz.fortern.minehunt.game.GameManager
 import xyz.fortern.minehunt.game.GameOutcome
 import xyz.fortern.minehunt.game.GamePhase
 import xyz.fortern.minehunt.game.GameRecordService
+import xyz.fortern.minehunt.game.Lobby
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.mode.manhunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.record.FactionInfo
@@ -64,6 +65,9 @@ class ManhuntGame(
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
 ) : RuntimeGameMode {
+
+    /** Manhunt 准备阶段的成员和角色状态。 */
+    private val lobby = Lobby()
 
     override val id = GameModeId.MANHUNT
     override val listener = ManhuntListener(gameManager)
@@ -323,7 +327,7 @@ class ManhuntGame(
                 null
             }
         } else {
-            when (gameManager.lobby.member(player.uniqueId)?.role) {
+            when (lobby.member(player.uniqueId)?.role) {
                 ROLE_SPEEDRUNNER -> Faction.SPEEDRUN
                 ROLE_HUNTER -> Faction.HUNTER
                 else -> null
@@ -331,11 +335,11 @@ class ManhuntGame(
         }
     }
 
-    override fun isParticipantRole(role: String): Boolean = role == ROLE_HUNTER || role == ROLE_SPEEDRUNNER
+    private fun isParticipantRole(role: String): Boolean = role == ROLE_HUNTER || role == ROLE_SPEEDRUNNER
 
     override fun assignRole(player: Player, role: String): Boolean {
         if (gameManager.phase != GamePhase.LOBBY || role !in roles) return false
-        gameManager.lobby.assign(player.uniqueId, player.name, role)
+        lobby.assign(player.uniqueId, player.name, role)
         hunterTeam.removeEntry(player.name)
         speedrunnerTeam.removeEntry(player.name)
         audienceTeam.removeEntry(player.name)
@@ -356,11 +360,18 @@ class ManhuntGame(
         return true
     }
 
-    override fun removeFromLobby(player: Player) {
-        gameManager.lobby.remove(player.uniqueId)
+    private fun removeFromLobby(player: Player) {
+        lobby.remove(player.uniqueId)
         hunterTeam.removeEntry(player.name)
         speedrunnerTeam.removeEntry(player.name)
         audienceTeam.removeEntry(player.name)
+    }
+
+    override fun onPlayerQuit(player: Player) {
+        if (gameManager.phase != GamePhase.COUNTDOWN) return
+        val role = lobby.member(player.uniqueId)?.role ?: return
+        if (isParticipantRole(role)) gameManager.interruptCountdown()
+        removeFromLobby(player)
     }
 
     /**
@@ -388,12 +399,12 @@ class ManhuntGame(
     }
 
     override fun validateStart(): String? {
-        val onlineSpeedrunners = gameManager.lobby.members(ROLE_SPEEDRUNNER).count { Bukkit.getPlayer(it.uniqueId) != null }
+        val onlineSpeedrunners = lobby.members(ROLE_SPEEDRUNNER).count { Bukkit.getPlayer(it.uniqueId) != null }
         return if (onlineSpeedrunners == 0) "速通者需要至少一位玩家" else null
     }
 
     override fun participants(): Set<UUID> =
-        gameManager.lobby.allMembers()
+        lobby.allMembers()
             .filter { isParticipantRole(it.role) && Bukkit.getPlayer(it.uniqueId) != null }
             .mapTo(LinkedHashSet()) { it.uniqueId }
 
@@ -449,7 +460,7 @@ class ManhuntGame(
         }
 
         // 固定speedrunnerSet和speedrunnerList，速通者状态修改
-        gameManager.lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
+        lobby.members(ROLE_SPEEDRUNNER).forEach { member ->
             Bukkit.getPlayer(member.uniqueId)?.let {
                 speedrunnerSet.add(it.uniqueId)
                 it.gameMode = GameMode.SURVIVAL
@@ -459,7 +470,7 @@ class ManhuntGame(
         speedrunnerList = speedrunnerSet.toList()
 
         // 固定hunterSet，将猎人传送到世界底部，且指南针开始有所指向
-        gameManager.lobby.members(ROLE_HUNTER).forEach { member ->
+        lobby.members(ROLE_HUNTER).forEach { member ->
             Bukkit.getPlayer(member.uniqueId)?.let {
                 hunterSet.add(it.uniqueId)
                 it.teleport(Location(overworld, 0.0, overworld.minHeight - 2.0, 0.0))

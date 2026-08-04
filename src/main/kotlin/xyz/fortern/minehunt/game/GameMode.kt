@@ -31,9 +31,6 @@ interface GameMode : AutoCloseable {
     /** 可供 `/minehunt give` 请求的稳定物品标识。 */
     val specialItems: List<String>
 
-    /** 判断角色是否应计入本局参赛者，而非观众。 */
-    fun isParticipantRole(role: String): Boolean
-
     /**
      * 在准备阶段为玩家分配角色，并同步该模式的展示状态。
      *
@@ -41,8 +38,8 @@ interface GameMode : AutoCloseable {
      */
     fun assignRole(player: Player, role: String): Boolean
 
-    /** 从准备大厅及模式自己的展示状态中移除玩家。 */
-    fun removeFromLobby(player: Player)
+    /** 根据当前阶段处理玩家退出，并按模式规则更新大厅或对局状态。 */
+    fun onPlayerQuit(player: Player)
 
     /**
      * 校验当前大厅能否开局。

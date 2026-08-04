@@ -12,15 +12,15 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
-import xyz.fortern.minehunt.record.GameMode as GameModeId
-import java.util.UUID
+import java.util.*
 import kotlin.time.Clock
 import kotlin.time.Instant
+import xyz.fortern.minehunt.record.GameMode as GameModeId
 
 /**
  * 管理一台服务端进程中唯一一局游戏的通用生命周期。
  *
- * 该类是阶段转换、大厅成员、当前模式、通用投票和会话任务清理的协调入口；
+ * 该类是阶段转换、当前模式、通用投票和会话任务清理的协调入口；
  * 模式实现不应自行改变 [phase]。
  */
 class GameManager(
@@ -32,9 +32,6 @@ class GameManager(
     private var countdownTask: BukkitTask? = null
     private var remakeTask: BukkitTask? = null
     private var remakeScheduled = false
-
-    /** 当前准备阶段的成员关系；选择其他模式时会被清空。 */
-    val lobby = Lobby()
 
     /** 当前选中的模式实例；必须先注册并选择模式后才能读取。 */
     lateinit var currentMode: GameMode
@@ -113,13 +110,12 @@ class GameManager(
     /**
      * 在准备阶段创建并选中一个全新的模式实例。
      *
-     * 切换时会关闭旧模式并清空大厅，调用方需要重新分配所有玩家角色。
+     * 切换时会关闭旧模式；新模式负责创建自己的大厅和角色状态。
      */
     fun selectMode(id: GameModeId) {
         check(phase == GamePhase.LOBBY) { "Game mode can only be selected in the lobby" }
         val factory = factories[id] ?: error("Game mode $id is not registered")
         deselectCurrentMode()
-        lobby.clear()
         currentMode = factory()
         plugin.server.pluginManager.registerEvents(currentMode.listener, plugin)
     }
@@ -230,12 +226,9 @@ class GameManager(
         }
     }
 
-    /** 参赛者在倒计时期间离线时取消开局，并移除其大厅身份。 */
+    /** 将玩家退出事件委托给当前模式。 */
     fun onPlayerQuit(player: Player) {
-        if (phase != GamePhase.COUNTDOWN) return
-        val role = lobby.member(player.uniqueId)?.role ?: return
-        if (currentMode.isParticipantRole(role)) interruptCountdown()
-        currentMode.removeFromLobby(player)
+        currentMode.onPlayerQuit(player)
     }
 
     /**
