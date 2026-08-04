@@ -1,9 +1,5 @@
-package xyz.fortern.minehunt.listener
+package xyz.fortern.minehunt.mode.manhunt
 
-import net.kyori.adventure.platform.bukkit.BukkitAudiences
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
-import org.bukkit.GameMode
 import org.bukkit.Material
 import org.bukkit.entity.AbstractArrow
 import org.bukkit.entity.Blaze
@@ -21,64 +17,34 @@ import org.bukkit.event.entity.ProjectileHitEvent
 import org.bukkit.event.player.PlayerBedEnterEvent
 import org.bukkit.event.player.PlayerDropItemEvent
 import org.bukkit.event.player.PlayerInteractEvent
-import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerPortalEvent
-import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
-import xyz.fortern.minehunt.Console
-import xyz.fortern.minehunt.Console.GameStage
+import xyz.fortern.minehunt.game.GameManager
+import xyz.fortern.minehunt.game.GameOutcome
+import xyz.fortern.minehunt.game.GamePhase
 import xyz.fortern.minehunt.record.FinishType
-import xyz.fortern.minehunt.rule.RuleKey
 import java.util.concurrent.ThreadLocalRandom
 
-class GameListener(
-    private val console: Console,
-    private val adventure: BukkitAudiences,
+/**
+ * 只属于 Manhunt 的 Bukkit 事件适配层。
+ *
+ * 每个处理器都会先确认当前模式仍是 [ManhuntGame]，避免未来注册其他模式后发生事件串扰。
+ */
+class ManhuntListener(
+    private val gameManager: GameManager,
 ) : Listener {
-
-    /**
-     * 玩家加入服务器时
-     */
-    @EventHandler
-    fun onPlayerJoin(event: PlayerJoinEvent) {
-        adventure.player(event.player).sendMessage(Component.text("=====欢迎来到猎人游戏=====", NamedTextColor.GOLD))
-        val player = event.player
-        if (console.stage == GameStage.PREPARING) {
-            // 在准备阶段，玩家设为冒险模式
-            player.gameMode = GameMode.ADVENTURE
-            // 自动加入观众阵营
-            console.joinAudience(player)
-        } else if (console.stage == GameStage.PROCESSING) {
-            console.reJoinInGame(player)
-        }
-    }
-
-    /**
-     * 参与游戏的玩家在倒计时阶段退出，则中断倒计时
-     */
-    @EventHandler
-    fun onPlayerQuit(event: PlayerQuitEvent) {
-        val player = event.player
-        if (console.stage == GameStage.COUNTDOWN) {
-            val faction = console.getFaction(player)
-            if (faction == Console.Faction.HUNTER || faction == Console.Faction.SPEEDRUN) {
-                console.interruptCountdownToStart()
-            }
-            // 将离开的玩家从team中移除
-            player.scoreboard.teams.forEach { it.removeEntry(player.name) }
-        }
-    }
 
     /**
      * 猎人重生时给予追踪指南针
      */
     @EventHandler
     fun onPlayerSpawn(event: PlayerRespawnEvent) {
-        console.giveCompassIfNeed(event.player)
+        val game = gameManager.currentMode as? ManhuntGame ?: return
+        game.giveCompassIfNeed(event.player)
     }
 
     /**
@@ -86,10 +52,11 @@ class GameListener(
      */
     @EventHandler
     fun onDropItem(event: PlayerDropItemEvent) {
+        val game = gameManager.currentMode as? ManhuntGame ?: return
         val itemStack = event.itemDrop.itemStack
-        if (!console.isHunterCompass(itemStack)) return
+        if (!game.isHunterCompass(itemStack)) return
 
-        console.trackNextPlayer(event.player)
+        game.trackNextPlayer(event.player)
         event.isCancelled = true
     }
 
@@ -99,12 +66,13 @@ class GameListener(
     @EventHandler
     fun onPlayerMove(event: PlayerMoveEvent) {
         // 暂且通过取消事件的方法阻止玩家移动
-        if (console.stage != GameStage.PROCESSING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
+        val game = gameManager.currentMode as? ManhuntGame ?: return
 
         val player = event.player
         // 猎人等待出生时，或等待复活时，阻止其移动
-        if (console.getFaction(player) == Console.Faction.HUNTER) {
-            if (console.waitHunterSpawning(player) || console.isRespawning(player))
+        if (game.getFaction(player) == ManhuntGame.Faction.HUNTER) {
+            if (game.waitHunterSpawning(player) || game.isRespawning(player))
                 event.isCancelled = true
         }
     }
@@ -114,9 +82,10 @@ class GameListener(
      */
     @EventHandler
     fun onHunterReadyTP(event: PlayerTeleportEvent) {
+        val game = gameManager.currentMode as? ManhuntGame ?: return
         val player = event.player
-        if (console.getFaction(player) == Console.Faction.HUNTER
-            && console.isRespawning(player)
+        if (game.getFaction(player) == ManhuntGame.Faction.HUNTER
+            && game.isRespawning(player)
             && event.cause != PlayerTeleportEvent.TeleportCause.PLUGIN
         ) {
             event.isCancelled = true
@@ -128,7 +97,8 @@ class GameListener(
      */
     @EventHandler
     fun onPlayerDeath(event: PlayerDeathEvent) {
-        console.handlePlayerDeath(event.entity)
+        val game = gameManager.currentMode as? ManhuntGame ?: return
+        game.handlePlayerDeath(event.entity)
     }
 
     /**
@@ -136,14 +106,15 @@ class GameListener(
      */
     @EventHandler
     fun onDragonDeath(event: EntityDeathEvent) {
-        if (console.stage != GameStage.PROCESSING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
+        val game = gameManager.currentMode as? ManhuntGame ?: return
         val entity = event.entity
         if (entity is EnderDragon) {
-            console.end(Console.Faction.SPEEDRUN, FinishType.FINISHED)
+            gameManager.finish(GameOutcome(ManhuntGame.ROLE_SPEEDRUNNER, FinishType.FINISHED))
             return
         }
         // 是否给予更多速通相关的战利品
-        if (!console.gameRules.getRuleValue(RuleKey.SPEEDRUN_LOOT_UP)) {
+        if (!game.gameRules.getRuleValue(ManhuntRuleKeys.SPEEDRUN_LOOT_UP)) {
             return
         }
         if (entity is Blaze) {
@@ -166,7 +137,9 @@ class GameListener(
      */
     @EventHandler
     fun onPiglinTrade(event: PiglinBarterEvent) {
-        if (!console.gameRules.getRuleValue(RuleKey.SPEEDRUN_LOOT_UP)) return
+        if (gameManager.phase != GamePhase.RUNNING) return
+        val game = gameManager.currentMode as? ManhuntGame ?: return
+        if (!game.gameRules.getRuleValue(ManhuntRuleKeys.SPEEDRUN_LOOT_UP)) return
 
         if (ThreadLocalRandom.current().nextInt(10) < 3) {
             event.outcome.add(ItemStack(Material.ENDER_PEARL))
@@ -178,11 +151,12 @@ class GameListener(
      */
     @EventHandler
     fun onPlayerChangeWorld(event: PlayerPortalEvent) {
-        if (console.stage != GameStage.PROCESSING) return
+        if (gameManager.phase != GamePhase.RUNNING) return
+        val game = gameManager.currentMode as? ManhuntGame ?: return
 
         // 我们用了Kotlin有了更装B的写法
         event.from.world?.let {
-            console.recordLocAtPortal(event.player, event.from, event.to)
+            game.recordLocAtPortal(event.player, event.from, event.to)
         }
     }
 
@@ -191,9 +165,10 @@ class GameListener(
      */
     @EventHandler
     fun onPlayerBedEnterEvent(event: PlayerBedEnterEvent) {
-        if (console.stage == GameStage.PROCESSING
-            && !console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL)
-            && console.getFaction(event.player) == Console.Faction.HUNTER
+        val game = gameManager.currentMode as? ManhuntGame ?: return
+        if (gameManager.phase == GamePhase.RUNNING
+            && !game.gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_INTENTIONAL)
+            && game.getFaction(event.player) == ManhuntGame.Faction.HUNTER
             && event.bedEnterResult == PlayerBedEnterEvent.BedEnterResult.NOT_POSSIBLE_HERE
         ) {
             // ALLOW 玩家入睡。这似乎是唯一阻止床爆炸的方法。
@@ -206,10 +181,11 @@ class GameListener(
      */
     @EventHandler
     fun onItemUse(event: PlayerInteractEvent) {
-        if (event.hand == EquipmentSlot.OFF_HAND || console.stage != GameStage.PROCESSING) return
+        if (event.hand == EquipmentSlot.OFF_HAND || gameManager.phase != GamePhase.RUNNING) return
+        val game = gameManager.currentMode as? ManhuntGame ?: return
         val block = event.clickedBlock ?: return
-        if (block.world == console.nether || block.type != Material.RESPAWN_ANCHOR) return
-        if (!console.gameRules.getRuleValue(RuleKey.HUNTER_INTENTIONAL) && console.getFaction(event.player) == Console.Faction.HUNTER) {
+        if (block.world == game.nether || block.type != Material.RESPAWN_ANCHOR) return
+        if (!game.gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_INTENTIONAL) && game.getFaction(event.player) == ManhuntGame.Faction.HUNTER) {
             event.setUseInteractedBlock(Event.Result.DENY)
         }
     }
@@ -219,11 +195,12 @@ class GameListener(
      */
     @EventHandler
     fun onArrow(event: ProjectileHitEvent) {
+        val game = gameManager.currentMode as? ManhuntGame ?: return
         event.hitEntity ?: return
         val arrow = event.entity
         val shooter = arrow.shooter
         if (shooter == null || shooter !is Player || arrow !is AbstractArrow || arrow is Trident) return
-        console.onPlayerArrowHit(shooter)
+        game.onPlayerArrowHit(shooter)
     }
 
 }

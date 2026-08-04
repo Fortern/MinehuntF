@@ -8,31 +8,34 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabExecutor
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
-import xyz.fortern.minehunt.Console
 import xyz.fortern.minehunt.config.ConfigManager
+import xyz.fortern.minehunt.game.GameManager
+import xyz.fortern.minehunt.game.GamePhase
 import xyz.fortern.minehunt.rule.RuleKey
 
 /**
  * 主命令 minehunt
  */
 class MinehuntCommand(
-    private val console: Console,
+    private val gameManager: GameManager,
     private val configManager: ConfigManager,
     private val adventure: BukkitAudiences,
     private val plugin: JavaPlugin,
 ) : TabExecutor {
 
     private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give", "remake", "reload")
-    private val teams: List<String> = listOf("hunter", "speedrunner", "audience")
-    private val rules: List<String> =
-        listOf("hunter_respawn_cd", "hunter_ready_cd", "friendly_fire", "hunter_intentional", "speedrun_loot_up")
-    private val items: List<String> = listOf("compass")
+    private val teams: List<String>
+        get() = gameManager.currentMode.roles
+    private val rules: List<String>
+        get() = gameManager.currentMode.rules.getAllRules().keys.map { it.name }
+    private val items: List<String>
+        get() = gameManager.currentMode.specialItems
 
     private val helpMessages = listOf(
         Component.text("Minehunt v${plugin.description.version}", NamedTextColor.GREEN),
         Component.text("/minehunt help  ", NamedTextColor.GOLD)
             .append(Component.text("帮助信息", NamedTextColor.WHITE)),
-        Component.text("/minehunt join (hunter|speedrunner|audience)  ", NamedTextColor.GOLD)
+        Component.text("/minehunt join <role>  ", NamedTextColor.GOLD)
             .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
         Component.text("/minehunt leave  ", NamedTextColor.GOLD)
             .append(Component.text("加入观众阵营", NamedTextColor.WHITE)),
@@ -132,7 +135,7 @@ class MinehuntCommand(
      * 玩家加入队伍
      */
     private fun onJoin(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
-        if (console.stage != Console.GameStage.PREPARING && console.beginningCountdown != null) {
+        if (gameManager.phase != GamePhase.LOBBY) {
             if (flag) {
                 adventure.sender(sender).sendMessage(Component.text("只能在准备阶段加入队伍", NamedTextColor.RED))
             }
@@ -150,22 +153,8 @@ class MinehuntCommand(
                 adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
                 return null
             }
-            when (teamName) {
-                "hunter" -> {
-                    console.joinHunter(sender)
-                }
-
-                "speedrunner" -> {
-                    console.joinSpeedrunner(sender)
-                }
-
-                "audience" -> {
-                    console.joinAudience(sender)
-                }
-
-                else -> {
-                    adventure.sender(sender).sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
-                }
+            if (!gameManager.assignRole(sender, teamName)) {
+                adventure.sender(sender).sendMessage(Component.text("输入正确的队伍名称", NamedTextColor.RED))
             }
             return null
         } else {
@@ -185,7 +174,7 @@ class MinehuntCommand(
             if (sender !is Player) {
                 adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
             } else {
-                console.joinAudience(sender)
+                gameManager.assignRole(sender, gameManager.currentMode.spectatorRole)
             }
         }
         return null
@@ -203,34 +192,16 @@ class MinehuntCommand(
             return null
         }
 
-        return when (val rule = args[1]) {
-            "hunter_respawn_cd" -> {
-                getOrChangeRule(args, flag, sender, RuleKey.HUNTER_RESPAWN_CD)
-            }
-
-            "hunter_ready_cd" -> {
-                getOrChangeRule(args, flag, sender, RuleKey.HUNTER_READY_CD)
-            }
-
-            "friendly_fire" -> {
-                getOrChangeRule(args, flag, sender, RuleKey.FRIENDLY_FIRE)
-            }
-
-            "hunter_intentional" -> {
-                getOrChangeRule(args, flag, sender, RuleKey.HUNTER_INTENTIONAL)
-            }
-
-            "speedrun_loot_up" -> {
-                getOrChangeRule(args, flag, sender, RuleKey.SPEEDRUN_LOOT_UP)
-            }
-
-            else -> {
-                if (flag) {
-                    adventure.sender(sender).sendMessage(Component.text("不存在的规则项"))
-                    null
-                } else {
-                    if (args.size == 2) rules.filter { it.startsWith(rule) } else null
-                }
+        val ruleName = args[1]
+        val rule = gameManager.currentMode.rules.findRule(ruleName)
+        return if (rule != null) {
+            getOrChangeRule(args, flag, sender, rule)
+        } else {
+            if (flag) {
+                adventure.sender(sender).sendMessage(Component.text("不存在的规则项"))
+                null
+            } else {
+                if (args.size == 2) rules.filter { it.startsWith(ruleName) } else null
             }
         }
     }
@@ -253,8 +224,8 @@ class MinehuntCommand(
         } else if (args.size == 3) {
             // 给规则赋值
             if (flag) {
-                if (console.stage == Console.GameStage.PREPARING) {
-                    if (console.gameRules.setGameRuleValueSafe(ruleKey, args[2])) {
+                if (gameManager.phase == GamePhase.LOBBY) {
+                    if (gameManager.currentMode.rules.setRuleValueFromString(ruleKey, args[2])) {
                         adventure.sender(sender).sendMessage(
                             Component.text(sender.name, NamedTextColor.YELLOW)
                                 .append(Component.text("修改规则项", NamedTextColor.WHITE))
@@ -262,7 +233,7 @@ class MinehuntCommand(
                                 .append(Component.text("值为", NamedTextColor.WHITE))
                                 .append(Component.text(args[2], NamedTextColor.GREEN))
                         )
-                        console.refreshEntry(ruleKey)
+                        gameManager.currentMode.onRuleChanged(ruleKey)
                     } else {
                         adventure.sender(sender).sendMessage(Component.text("不合适的值", NamedTextColor.RED))
                     }
@@ -287,9 +258,9 @@ class MinehuntCommand(
      */
     private fun onStart(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
-            if (console.stage == Console.GameStage.PREPARING && console.beginningCountdown == null) {
-                val result = console.tryStart()
-                if (result.isNotEmpty()) {
+            if (gameManager.phase == GamePhase.LOBBY) {
+                val result = gameManager.tryStart()
+                if (result != null) {
                     adventure.sender(sender)
                         .sendMessage(Component.text("游戏开始失败，原因：${result}", NamedTextColor.RED))
                 }
@@ -306,7 +277,7 @@ class MinehuntCommand(
     private fun onStop(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
             if (sender is Player) {
-                console.voteForStop(sender)
+                gameManager.voteForStop(sender)
             } else {
                 adventure.sender(sender).sendMessage(Component.text("只有游戏中的玩家才能投票"))
             }
@@ -332,14 +303,8 @@ class MinehuntCommand(
                 adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
                 return null
             }
-            when (item) {
-                "compass" -> {
-                    console.giveCompassIfNeed(sender)
-                }
-
-                else -> {
-                    adventure.sender(sender).sendMessage(Component.text("输入正确的物品名称", NamedTextColor.RED))
-                }
+            if (!gameManager.currentMode.giveSpecialItem(sender, item)) {
+                adventure.sender(sender).sendMessage(Component.text("输入正确的物品名称", NamedTextColor.RED))
             }
             return null
         } else {
@@ -356,7 +321,7 @@ class MinehuntCommand(
     fun onRemake(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) {
             if (sender is Player) {
-                console.voteForRemake(sender)
+                gameManager.voteForRemake(sender)
             } else {
                 adventure.sender(sender).sendMessage(Component.text("The sender is not a player.", NamedTextColor.RED))
             }
@@ -388,7 +353,7 @@ class MinehuntCommand(
         adventure.sender(sender).sendMessage(Component.text("显示名称: ${ruleKey.displayName}"))
         adventure.sender(sender).sendMessage(Component.text("描述: ${ruleKey.info}"))
         adventure.sender(sender).sendMessage(Component.text("值类型: ${ruleKey.typeInfo}"))
-        adventure.sender(sender).sendMessage(Component.text("数值: ${console.gameRules.getRuleValue(ruleKey)}"))
+        adventure.sender(sender).sendMessage(Component.text("数值: ${gameManager.currentMode.rules.getRuleValueUntyped(ruleKey)}"))
     }
 
     /**

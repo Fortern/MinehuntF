@@ -1,4 +1,6 @@
-package xyz.fortern.minehunt.record
+package xyz.fortern.minehunt.mode.manhunt.record
+
+import xyz.fortern.minehunt.record.GameDetails
 
 import java.util.*
 import kotlin.time.Instant

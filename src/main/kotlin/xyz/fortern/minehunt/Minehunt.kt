@@ -5,13 +5,18 @@ import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.command.MinehuntCommand
 import xyz.fortern.minehunt.config.ConfigManager
-import xyz.fortern.minehunt.listener.GameListener
+import xyz.fortern.minehunt.game.GameManager
+import xyz.fortern.minehunt.listener.GameLifecycleListener
+import xyz.fortern.minehunt.mode.manhunt.ManhuntGame
+import xyz.fortern.minehunt.mode.manhunt.ManhuntListener
+import xyz.fortern.minehunt.record.GameMode
 import xyz.fortern.minehunt.storage.StorageManager
 
 class Minehunt : JavaPlugin() {
 
     private lateinit var instance: Minehunt
     private lateinit var adventure: BukkitAudiences
+    private lateinit var gameManager: GameManager
 
     override fun onEnable() {
         this.instance = this
@@ -22,17 +27,19 @@ class Minehunt : JavaPlugin() {
         val storageManager = StorageManager(this)
         val configManager = ConfigManager(this, storageManager)
 
-        // 创建控制台
-        val console = Console(this, adventure, storageManager)
-
+        gameManager = GameManager(this, adventure, storageManager)
+        gameManager.registerMode(GameMode.MANHUNT) { context -> ManhuntGame(context) }
+        gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件
-        Bukkit.getPluginManager().registerEvents(GameListener(console, adventure), this)
+        Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager, adventure), this)
+        Bukkit.getPluginManager().registerEvents(ManhuntListener(gameManager), this)
 
         // 注册命令
-        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(console, configManager, adventure, this))
+        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(gameManager, configManager, adventure, this))
     }
 
     override fun onDisable() {
+        if (this::gameManager.isInitialized) gameManager.close()
         this.adventure.close()
     }
 }

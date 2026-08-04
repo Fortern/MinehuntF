@@ -1,4 +1,4 @@
-package xyz.fortern.minehunt.rule
+package xyz.fortern.minehunt.mode.manhunt
 
 import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
@@ -24,18 +24,18 @@ class RuleBook {
         Util.fillItem(it, filler)
         val rule1 = ItemStack(Material.CLOCK)
         val itemMeta1 = rule1.itemMeta!!
-        itemMeta1.setDisplayName(Component.text(RuleKey.HUNTER_READY_CD.info).serialize())
-        itemMeta1.lore = listOf(Component.text(RuleKey.HUNTER_READY_CD.name).serialize())
+        itemMeta1.setDisplayName(Component.text(ManhuntRuleKeys.HUNTER_READY_CD.info).serialize())
+        itemMeta1.lore = listOf(Component.text(ManhuntRuleKeys.HUNTER_READY_CD.name).serialize())
         it.setItem(0, rule1)
         val rule2 = ItemStack(Material.CLOCK)
         val itemMeta2 = rule2.itemMeta!!
-        itemMeta2.setDisplayName(Component.text(RuleKey.HUNTER_RESPAWN_CD.info).serialize())
-        itemMeta2.lore = listOf(Component.text(RuleKey.HUNTER_RESPAWN_CD.name).serialize())
+        itemMeta2.setDisplayName(Component.text(ManhuntRuleKeys.HUNTER_RESPAWN_CD.info).serialize())
+        itemMeta2.lore = listOf(Component.text(ManhuntRuleKeys.HUNTER_RESPAWN_CD.name).serialize())
         it.setItem(4, rule2)
         val rule3 = ItemStack(Material.CLOCK)
         val itemMeta3 = rule3.itemMeta!!
-        itemMeta3.setDisplayName(Component.text(RuleKey.FRIENDLY_FIRE.info).serialize())
-        itemMeta3.lore = listOf(Component.text(RuleKey.FRIENDLY_FIRE.name).serialize())
+        itemMeta3.setDisplayName(Component.text(ManhuntRuleKeys.FRIENDLY_FIRE.info).serialize())
+        itemMeta3.lore = listOf(Component.text(ManhuntRuleKeys.FRIENDLY_FIRE.name).serialize())
         it.setItem(8, rule3)
     }
 }

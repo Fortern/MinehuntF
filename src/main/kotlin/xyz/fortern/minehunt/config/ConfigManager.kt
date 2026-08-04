@@ -4,6 +4,11 @@ import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.storage.StorageManager
 import xyz.fortern.minehunt.storage.StorageType
 
+/**
+ * 将 Bukkit 配置转换为不可变配置对象。
+ *
+ * 数据源只在首次加载时初始化；运行时重载不会切换数据库连接。
+ */
 class ConfigManager(
     private val plugin: JavaPlugin,
     private val storageManager: StorageManager,

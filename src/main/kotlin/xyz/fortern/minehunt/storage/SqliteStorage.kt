@@ -6,10 +6,11 @@ import org.intellij.lang.annotations.Language
 import org.sqlite.SQLiteDataSource
 import xyz.fortern.minehunt.record.GameDetails
 import xyz.fortern.minehunt.record.GameRecord
-import xyz.fortern.minehunt.record.MinehuntRecord
+import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import java.sql.Connection
 import java.sql.SQLException
+import java.sql.Statement
 import java.sql.Types
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -32,7 +33,7 @@ class SqliteStorage(
         private const val CREATE_GAME_RECORD = """
             CREATE TABLE IF NOT EXISTS $GAME_RECORD (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
-                mode           INTEGER NOT NULL,
+                mode           TEXT    NOT NULL,
                 start_time     INTEGER NOT NULL,
                 end_time       INTEGER NOT NULL,
                 duration       INTEGER NOT NULL,
@@ -113,9 +114,11 @@ class SqliteStorage(
     override fun prepareSchema() {
         dataSource.connection.use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeUpdate(CREATE_GAME_RECORD)
-                statement.executeUpdate(CREATE_MINEHUNT_RECORD)
-                statement.executeUpdate(CREATE_PLAYER_IN_GAME)
+                listOf(CREATE_GAME_RECORD, CREATE_MINEHUNT_RECORD, CREATE_PLAYER_IN_GAME)
+                    .flatMap { it.split(';') }
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .forEach(statement::executeUpdate)
             }
         }
     }
@@ -163,6 +166,7 @@ class SqliteStorage(
                 } catch (e: SQLException) {
                     logger.log(Level.SEVERE, "回滚失败", e)
                 }
+                realGameId = 0
             }
         }
         return realGameId
@@ -175,7 +179,7 @@ class SqliteStorage(
         val insert = gameRecord.id == 0
         val realGameId: Int
         val statement1 = if (insert) {
-            connection.prepareStatement(INSERT_INTO_GAME_RECORD)
+            connection.prepareStatement(INSERT_INTO_GAME_RECORD, Statement.RETURN_GENERATED_KEYS)
         } else {
             connection.prepareStatement(UPDATE_GAME_RECORD)
         }
@@ -185,9 +189,9 @@ class SqliteStorage(
             it.setLong(3, gameRecord.endTime.toEpochMilliseconds())
             it.setLong(4, gameRecord.duration.inWholeMilliseconds)
             it.setString(5, gameRecord.finishType.toString())
-            it.setString(6, gson.toJson(gameRecord.result))
-            it.setLong(7, gameRecord.overworldSeed)
-            it.setString(8, gson.toJson(gameRecord.worldSeeds))
+            it.setLong(6, gameRecord.overworldSeed)
+            it.setString(7, gson.toJson(gameRecord.worldSeeds))
+            it.setString(8, gson.toJson(gameRecord.result))
             if (!insert) {
                 it.setInt(9, gameRecord.id)
             }
@@ -238,6 +242,7 @@ class SqliteStorage(
                 statement.setString(4 + 5, playerUUID)
                 statement.setInt(5, realGameId)
                 statement.setInt(5 + 5, realGameId)
+                statement.executeUpdate()
             }
         }
     }

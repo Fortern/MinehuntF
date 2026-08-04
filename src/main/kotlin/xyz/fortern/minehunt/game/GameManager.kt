@@ -1,0 +1,322 @@
+package xyz.fortern.minehunt.game
+
+import net.kyori.adventure.platform.bukkit.BukkitAudiences
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.title.Title
+import org.bukkit.Bukkit
+import org.bukkit.entity.Player
+import org.bukkit.plugin.java.JavaPlugin
+import xyz.fortern.minehunt.VoteProcess
+import xyz.fortern.minehunt.record.FinishType
+import xyz.fortern.minehunt.record.GameMode as GameModeId
+import xyz.fortern.minehunt.storage.StorageManager
+import kotlin.time.Clock
+
+/**
+ * 管理一台服务端进程中唯一一局游戏的通用生命周期。
+ *
+ * 该类是阶段转换、大厅成员、当前模式、通用投票和会话任务清理的协调入口；
+ * 模式实现不应自行改变 [phase]。
+ */
+class GameManager(
+    private val plugin: JavaPlugin,
+    private val adventure: BukkitAudiences,
+    storageManager: StorageManager,
+) : AutoCloseable {
+    private val state = GameStateMachine()
+    private val factories = LinkedHashMap<GameModeId, GameModeFactory>()
+    private val records = GameRecordService(plugin, storageManager)
+    private val serverTasks = GameTaskScope(plugin)
+    private var countdownTasks: GameTaskScope? = null
+    private var remakeScheduled = false
+
+    /** 当前准备阶段的成员关系；选择其他模式时会被清空。 */
+    val lobby = Lobby()
+
+    /** 当前选中的模式实例；必须先注册并选择模式后才能读取。 */
+    lateinit var currentMode: GameMode
+        private set
+
+    /** 已开始的会话；准备阶段和倒计时阶段为 `null`。 */
+    var activeGame: ActiveGame? = null
+        private set
+
+    /** 当前游戏阶段的只读视图。 */
+    val phase: GamePhase
+        get() = state.phase
+
+    private val voteForStop: VoteProcess = VoteProcess(plugin, 30L * 20, 0.8f, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
+        }
+        finish(GameOutcome(null, FinishType.STOPPED))
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("投票结束，票数不足"))
+        }
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            val votes = voteForStop.pollingNum()
+            val players = voteForStop.playersNum()
+            adventure.player(it).sendMessage(
+                Component.text(
+                    "投票终止游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})",
+                    NamedTextColor.RED,
+                )
+            )
+        }
+    })
+
+    private val voteForRemake: VoteProcess = VoteProcess(plugin, 30L * 20, 0.5f, {
+        remakeScheduled = true
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票结束，5秒后游戏重开--------"))
+        }
+        serverTasks.runLater(5 * 20L) { Bukkit.shutdown() }
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(Component.text("--------投票结束，票数不足--------"))
+        }
+    }, {
+        Bukkit.getOnlinePlayers().forEach {
+            val votes = voteForRemake.pollingNum()
+            val players = voteForRemake.playersNum()
+            adventure.player(it).sendMessage(
+                Component.text(
+                    "投票重开游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})",
+                    NamedTextColor.RED,
+                )
+            )
+        }
+    })
+
+    /** 注册模式工厂；同一模式标识不能重复注册。 */
+    fun registerMode(id: GameModeId, factory: GameModeFactory) {
+        check(id !in factories) { "Game mode $id is already registered" }
+        factories[id] = factory
+    }
+
+    /**
+     * 在准备阶段创建并选中一个全新的模式实例。
+     *
+     * 切换时会关闭旧模式并清空大厅，调用方需要重新分配所有玩家角色。
+     */
+    fun selectMode(id: GameModeId) {
+        check(phase == GamePhase.LOBBY) { "Game mode can only be selected in the lobby" }
+        val factory = factories[id] ?: error("Game mode $id is not registered")
+        if (this::currentMode.isInitialized) currentMode.close()
+        lobby.clear()
+        currentMode = factory.create(
+            ModeContext(
+                plugin,
+                adventure,
+                lobby,
+                records,
+                { phase },
+                { activeGame },
+                ::finish,
+            )
+        )
+    }
+
+    /**
+     * 校验当前模式并尝试进入倒计时。
+     *
+     * @return 成功进入倒计时为 `null`，否则返回面向命令发送者的失败原因
+     */
+    fun tryStart(): String? {
+        if (phase != GamePhase.LOBBY) return "现在不能开始游戏"
+        if (voteForRemake.isRunning()) return "正在进行重开投票"
+        val reason = currentMode.validateStart()
+        if (reason != null) return reason
+
+        state.transitionTo(GamePhase.COUNTDOWN)
+        val scope = GameTaskScope(plugin)
+        countdownTasks = scope
+        var countdown = 6
+        scope.runTimer(0, 20) {
+            if (--countdown > 0) {
+                Bukkit.getOnlinePlayers().forEach {
+                    adventure.player(it).showTitle(
+                        Title.title(
+                            Component.text(countdown.toString(), NamedTextColor.DARK_PURPLE),
+                            Component.text("开始倒计时", NamedTextColor.GRAY),
+                            0,
+                            20,
+                            0,
+                        )
+                    )
+                }
+            } else {
+                countdownTasks?.close()
+                countdownTasks = null
+                startNow()
+            }
+        }
+        return null
+    }
+
+    /** 取消尚未完成的开始倒计时并返回准备阶段。 */
+    fun interruptCountdown() {
+        if (phase != GamePhase.COUNTDOWN) return
+        countdownTasks?.close()
+        countdownTasks = null
+        state.transitionTo(GamePhase.LOBBY)
+    }
+
+    private fun startNow() {
+        check(phase == GamePhase.COUNTDOWN)
+        val session = ActiveGame(
+            currentMode.id,
+            Clock.System.now(),
+            currentMode.participants(),
+            GameTaskScope(plugin),
+        )
+        activeGame = session
+        try {
+            currentMode.start(session)
+            state.transitionTo(GamePhase.RUNNING)
+        } catch (error: Throwable) {
+            session.tasks.close()
+            activeGame = null
+            state.transitionTo(GamePhase.LOBBY)
+            throw error
+        }
+    }
+
+    /**
+     * 结束正在运行的会话，并将清理和结果生成串行化。
+     *
+     * 非游戏进行阶段调用时不会产生效果。
+     */
+    fun finish(outcome: GameOutcome) {
+        if (phase != GamePhase.RUNNING) return
+        val session = activeGame ?: return
+        state.transitionTo(GamePhase.ENDING)
+        session.endedAt = Clock.System.now()
+        session.tasks.close()
+        if (voteForStop.isRunning()) {
+            voteForStop.cancel()
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(Component.text("投票取消", NamedTextColor.RED))
+            }
+        }
+        try {
+            currentMode.finish(session, outcome)
+        } finally {
+            state.transitionTo(GamePhase.FINISHED)
+        }
+    }
+
+    /** 仅在准备阶段将角色分配委托给当前模式。 */
+    fun assignRole(player: Player, role: String): Boolean {
+        if (phase != GamePhase.LOBBY) return false
+        return currentMode.assignRole(player, role)
+    }
+
+    /** 根据当前阶段为新玩家分配观众身份，或恢复本局既有身份。 */
+    fun onPlayerJoin(player: Player) {
+        when (phase) {
+            GamePhase.LOBBY -> currentMode.assignRole(player, currentMode.spectatorRole)
+            GamePhase.RUNNING -> currentMode.rejoin(player)
+            else -> Unit
+        }
+    }
+
+    /** 参赛者在倒计时期间离线时取消开局，并移除其大厅身份。 */
+    fun onPlayerQuit(player: Player) {
+        if (phase != GamePhase.COUNTDOWN) return
+        val role = lobby.member(player.uniqueId)?.role ?: return
+        if (currentMode.isParticipantRole(role)) interruptCountdown()
+        currentMode.removeFromLobby(player)
+    }
+
+    /**
+     * 为终止本局投赞成票；第一票会按当前模式的有效参赛者名单创建表决。
+     */
+    fun voteForStop(player: Player) {
+        val audience = adventure.player(player)
+        val session = activeGame
+        if (phase != GamePhase.RUNNING || session == null) {
+            audience.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
+            return
+        }
+        val eligibleVoters = currentMode.stopVoters(session)
+        if (player.uniqueId !in eligibleVoters) {
+            audience.sendMessage(Component.text("只有游戏中的玩家才能投票", NamedTextColor.RED))
+            return
+        }
+        if (!voteForStop.isRunning()) {
+            val voters = eligibleVoters.mapNotNull(Bukkit::getPlayer)
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(
+                    Component.text("${player.name}发起了终止游戏的投票")
+                        .appendNewline()
+                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}"))
+                        .appendNewline()
+                        .append(Component.text("如果赞成请在${voteForStop.time / 20}秒内执行"))
+                        .append(
+                            Component.text(" /minehunt stop ", NamedTextColor.GREEN)
+                                .clickEvent(ClickEvent.suggestCommand("/minehunt stop"))
+                        )
+                )
+            }
+            voteForStop.newVote(voters)
+        }
+        if (!voteForStop.canVote(player)) {
+            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+            return
+        }
+        voteForStop.onPlayerVote(player)
+    }
+
+    /**
+     * 为关闭并重开服务端投赞成票；第一票会以当时全部在线玩家创建表决。
+     */
+    fun voteForRemake(player: Player) {
+        val audience = adventure.player(player)
+        if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.ENDING) {
+            audience.sendMessage(Component.text("游戏中不能重开", NamedTextColor.RED))
+            return
+        }
+        if (remakeScheduled) {
+            audience.sendMessage(Component.text("正在重开......"))
+            return
+        }
+        if (!voteForRemake.isRunning()) {
+            val voters = Bukkit.getOnlinePlayers().toList()
+            if (voters.isEmpty()) return
+            Bukkit.getOnlinePlayers().forEach {
+                adventure.player(it).sendMessage(
+                    Component.text("${player.name}发起了重开游戏的投票")
+                        .appendNewline()
+                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100)}"))
+                        .appendNewline()
+                        .append(Component.text("如果赞成请在${voteForRemake.time / 20}秒内执行"))
+                        .append(
+                            Component.text(" /minehunt remake ", NamedTextColor.GREEN)
+                                .clickEvent(ClickEvent.suggestCommand("/minehunt remake"))
+                        )
+                )
+            }
+            voteForRemake.newVote(voters)
+        }
+        if (!voteForRemake.canVote(player)) {
+            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+            return
+        }
+        voteForRemake.onPlayerVote(player)
+    }
+
+    override fun close() {
+        countdownTasks?.close()
+        activeGame?.tasks?.close()
+        if (voteForStop.isRunning()) voteForStop.cancel()
+        if (voteForRemake.isRunning()) voteForRemake.cancel()
+        if (this::currentMode.isInitialized) currentMode.close()
+        records.close()
+        serverTasks.close()
+    }
+}

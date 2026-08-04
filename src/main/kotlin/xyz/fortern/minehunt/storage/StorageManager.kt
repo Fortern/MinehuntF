@@ -10,6 +10,7 @@ import xyz.fortern.minehunt.storage.StorageType.*
 import java.io.File
 import java.util.logging.Level
 
+/** 根据配置持有当前对局记录存储，并向游戏层隐藏具体数据库实现。 */
 class StorageManager(
     private val plugin: JavaPlugin,
 ) {

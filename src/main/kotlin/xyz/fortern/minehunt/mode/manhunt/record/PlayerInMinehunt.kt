@@ -1,4 +1,6 @@
-package xyz.fortern.minehunt.record
+package xyz.fortern.minehunt.mode.manhunt.record
+
+import xyz.fortern.minehunt.record.PlayerDetails
 
 /**
  * Minehunt模式下，某位玩家的一局游戏信息
