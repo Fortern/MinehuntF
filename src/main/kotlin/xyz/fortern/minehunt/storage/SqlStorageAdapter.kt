@@ -3,6 +3,7 @@ package xyz.fortern.minehunt.storage
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import org.intellij.lang.annotations.Language
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.FactionInfo
 import xyz.fortern.minehunt.record.FinishType
@@ -33,25 +34,37 @@ abstract class SqlStorageAdapter(
     protected val logger: Logger,
 ) {
     companion object {
-        private const val GAME_RECORD = "game_record"
-        private const val MINEHUNT_RECORD = "minehunt_record"
-        private const val PLAYER_IN_GAME = "player_in_game"
-        private const val PLAYER_RANK_COLUMN = "player_rank"
+        @Language("PlainText")
+        const val GAME_RECORD = "game_record"
 
+        @Language("PlainText")
+        const val MINEHUNT_RECORD = "minehunt_record"
+
+        @Language("PlainText")
+        const val PLAYER_IN_GAME = "player_in_game"
+
+        @Language("SQL")
         private const val INSERT_INTO_GAME_RECORD = """
             INSERT INTO $GAME_RECORD (uuid, mode, start_time, end_time, duration, finish_type, overworld_seed, seeds, result)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
 
+        @Language("SQL")
         private const val INSERT_INTO_MINEHUNT_RECORD = """
             INSERT INTO $MINEHUNT_RECORD (first_time_to_nether, first_time_to_the_end, first_player_to_nether, first_player_to_the_end, game_id)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?);
         """
 
-        private const val DELETE_GAME_RECORD = "DELETE FROM $GAME_RECORD WHERE id = ?"
-        private const val DELETE_MINEHUNT_RECORD = "DELETE FROM $MINEHUNT_RECORD WHERE game_id = ?"
-        private const val DELETE_PLAYER_RECORDS = "DELETE FROM $PLAYER_IN_GAME WHERE game_id = ?"
+        @Language("SQL")
+        private const val DELETE_GAME_RECORD = "DELETE FROM $GAME_RECORD WHERE id = ?;"
 
+        @Language("SQL")
+        private const val DELETE_MINEHUNT_RECORD = "DELETE FROM $MINEHUNT_RECORD WHERE game_id = ?;"
+
+        @Language("SQL")
+        private const val DELETE_PLAYER_RECORDS = "DELETE FROM $PLAYER_IN_GAME WHERE game_id = ?;"
+
+        @Language("SQL")
         private const val SELECT_GAME_RECORD = """
             SELECT game.id,
                    game.uuid,
@@ -70,7 +83,7 @@ abstract class SqlStorageAdapter(
                    minehunt.first_player_to_the_end
             FROM $GAME_RECORD AS game
             LEFT JOIN $MINEHUNT_RECORD AS minehunt ON minehunt.game_id = game.id
-            WHERE game.id = ?
+            WHERE game.id = ?;
         """
 
         private val gson = GsonBuilder().serializeNulls().create()
@@ -201,7 +214,7 @@ abstract class SqlStorageAdapter(
     private fun insertPlayers(players: List<PlayerInGame>, gameId: Int, connection: Connection) {
         if (players.isEmpty()) return
         val sql = """
-            INSERT INTO $PLAYER_IN_GAME (game_id, player_uuid, $PLAYER_RANK_COLUMN, details)
+            INSERT INTO $PLAYER_IN_GAME (game_id, player_uuid, player_rank, details)
             VALUES (?, ?, ?, ?)
         """
         connection.prepareStatement(sql).use { statement ->
