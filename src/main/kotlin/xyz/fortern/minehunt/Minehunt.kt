@@ -28,10 +28,10 @@ class Minehunt : JavaPlugin() {
         val storageManager = StorageManager(this)
         val configManager = ConfigManager(this, storageManager)
 
-        gameRecords = GameRecordService(this, storageManager)
-        gameManager = GameManager(this, adventure)
+        gameRecords = GameRecordService(storageManager, logger)
+        gameManager = GameManager(this, adventure, gameRecords)
         gameManager.registerMode(GameMode.MANHUNT) {
-            ManhuntGame(gameManager, gameRecords, this, adventure)
+            ManhuntGame(gameManager, this, adventure)
         }
         gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件

@@ -8,6 +8,7 @@ import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.storage.StorageType.*
 import java.io.File
+import java.nio.file.Path
 import java.util.logging.Level
 
 /** 根据配置持有当前对局记录存储，并向游戏层隐藏具体数据库实现。 */
@@ -18,6 +19,10 @@ class StorageManager(
      * 当前正在使用的数据库存储
      */
     private lateinit var sqlStorageAdapter: SqlStorageAdapter
+
+    private val rollbackStorage = RollbackStorage(
+        plugin.dataFolder.toPath().resolve("unsaved-game-records")
+    )
 
     /**
      * 重新创建配置对象，并初始化数据库架构
@@ -64,15 +69,11 @@ class StorageManager(
         return this::sqlStorageAdapter.isInitialized
     }
 
-    /**
-     * 操作数据库，存储游戏记录
-     */
-    fun saveWholeGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>?): Int {
-        val gameId = sqlStorageAdapter.saveWholeGameRecord(gameRecord, players)
-        // 0作为魔法值，表示没有成功插入数据库。将使用本地存储。
-        if (gameId == 0) {
-            // TODO 存储到本地
-        }
-        return gameId
-    }
+    /** 仅在游戏结束时调用数据库，一次性插入完整记录。 */
+    fun insertGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>): Int =
+        sqlStorageAdapter.insertGameRecord(gameRecord, players)
+
+    /** 数据库失败或超时时，将完整记录写入插件数据目录中的独立 JSON 文件。 */
+    fun saveToLocalFile(gameRecord: GameRecord, players: List<PlayerInGame>): Path =
+        rollbackStorage.save(gameRecord, players)
 }

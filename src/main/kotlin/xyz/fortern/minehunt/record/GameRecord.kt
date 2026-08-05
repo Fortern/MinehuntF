@@ -2,6 +2,7 @@ package xyz.fortern.minehunt.record
 
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 
 /**
  * 代表一个游戏记录
@@ -11,6 +12,9 @@ class GameRecord(
      * 游戏id
      */
     val id: Int,
+
+    /** 跨数据库记录与本地回退文件保持稳定的对局标识。 */
+    val uuid: UUID,
 
     /**
      * 游戏模式

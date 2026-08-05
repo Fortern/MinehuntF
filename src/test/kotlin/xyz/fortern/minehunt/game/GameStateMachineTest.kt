@@ -12,6 +12,7 @@ class GameStateMachineTest {
         state.transitionTo(GamePhase.COUNTDOWN)
         state.transitionTo(GamePhase.RUNNING)
         state.transitionTo(GamePhase.ENDING)
+        state.transitionTo(GamePhase.SAVING)
         state.transitionTo(GamePhase.FINISHED)
 
         assertEquals(GamePhase.FINISHED, state.phase)
@@ -25,6 +26,16 @@ class GameStateMachineTest {
         state.transitionTo(GamePhase.LOBBY)
 
         assertEquals(GamePhase.LOBBY, state.phase)
+    }
+
+    @Test
+    fun `ending cannot skip saving phase`() {
+        val state = GameStateMachine(GamePhase.ENDING)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            state.transitionTo(GamePhase.FINISHED)
+        }
+        assertEquals(GamePhase.ENDING, state.phase)
     }
 
     @Test

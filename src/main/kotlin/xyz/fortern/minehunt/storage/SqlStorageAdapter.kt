@@ -17,13 +17,8 @@ abstract class SqlStorageAdapter(
     /** 创建当前实现所需的表和索引；重复调用必须安全。 */
     abstract fun prepareSchema()
 
-    /**
-     * 插入或更新完整对局记录。
-     *
-     * [players] 为 `null` 时只保存开局快照；非 `null` 时同时保存最终玩家记录。
-     * 返回持久化后的对局 ID，失败时返回 `0`。
-     */
-    abstract fun saveWholeGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>?): Int
+    /** 在一个事务中插入最终对局及其玩家记录，返回生成的 ID，失败时返回 `0`。 */
+    abstract fun insertGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>): Int
 
     abstract fun deleteGameRecord(id: Int): Boolean
 

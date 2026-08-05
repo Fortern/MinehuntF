@@ -21,7 +21,7 @@ import java.util.logging.Logger
 
 class SqliteStorageTest {
     @Test
-    fun `initial insert and final update keep one correctly mapped game record`() {
+    fun `final record is inserted once with all related rows`() {
         val testDirectory = Path.of("target", "test-data")
         Files.createDirectories(testDirectory)
         val databaseFile = testDirectory.resolve("game-${UUID.randomUUID()}.db")
@@ -32,24 +32,11 @@ class SqliteStorageTest {
         storage.prepareSchema()
 
         val startedAt = Instant.ofEpochMilli(1_000)
-        val initial = GameRecord(
-            0,
-            GameMode.MANHUNT,
-            startedAt,
-            startedAt,
-            Duration.ZERO,
-            FinishType.NULL,
-            emptyList(),
-            42L,
-            mapOf("world" to 42L),
-            MinehuntRecord.empty(),
-        )
-        val gameId = storage.saveWholeGameRecord(initial, null)
-        assertTrue(gameId > 0)
-
+        val gameUuid = UUID.randomUUID()
         val playerId = UUID.randomUUID()
         val finished = GameRecord(
-            gameId,
+            0,
+            gameUuid,
             GameMode.MANHUNT,
             startedAt,
             Instant.ofEpochMilli(6_000),
@@ -62,16 +49,18 @@ class SqliteStorageTest {
         )
         val player = PlayerInGame(
             playerId,
-            gameId,
+            0,
             1,
             PlayerInMinehunt(emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap()),
         )
-        assertEquals(gameId, storage.saveWholeGameRecord(finished, listOf(player)))
+        val gameId = storage.insertGameRecord(finished, listOf(player))
+        assertTrue(gameId > 0)
 
         dataSource.connection.use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT mode, overworld_seed, seeds, result FROM game_record").use { result ->
+                statement.executeQuery("SELECT uuid, mode, overworld_seed, seeds, result FROM game_record").use { result ->
                     assertTrue(result.next())
+                    assertEquals(gameUuid.toString(), result.getString("uuid"))
                     assertEquals("MANHUNT", result.getString("mode"))
                     assertEquals(42L, result.getLong("overworld_seed"))
                     assertTrue(result.getString("seeds").contains("world"))

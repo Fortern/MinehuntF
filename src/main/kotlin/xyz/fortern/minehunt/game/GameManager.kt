@@ -14,6 +14,7 @@ import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
 import java.time.Instant
 import java.util.*
+import java.util.logging.Level
 import xyz.fortern.minehunt.record.GameMode as GameModeId
 
 /**
@@ -25,6 +26,7 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
 class GameManager(
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
+    private val records: GameRecordService,
 ) : AutoCloseable {
     private val state = GameStateMachine()
     private val factories = LinkedHashMap<GameModeId, () -> GameMode>()
@@ -192,6 +194,7 @@ class GameManager(
      *
      * 非游戏进行阶段调用时不会产生效果。
      */
+    @Synchronized
     fun finish(outcome: GameOutcome) {
         if (phase != GamePhase.RUNNING) return
         state.transitionTo(GamePhase.ENDING)
@@ -203,9 +206,28 @@ class GameManager(
                 adventure.player(it).sendMessage(Component.text("投票取消", NamedTextColor.RED))
             }
         }
-        try {
+        val completedRecord = try {
             currentMode.finish(outcome)
-        } finally {
+        } catch (error: Throwable) {
+            plugin.logger.log(Level.SEVERE, "生成最终对局记录失败", error)
+            state.transitionTo(GamePhase.SAVING)
+            state.transitionTo(GamePhase.FINISHED)
+            return
+        }
+
+        state.transitionTo(GamePhase.SAVING)
+        try {
+            records.save(completedRecord).whenComplete { _, _ -> finishSaving() }
+        } catch (error: Throwable) {
+            plugin.logger.log(Level.SEVERE, "启动对局记录保存任务失败", error)
+            finishSaving()
+        }
+    }
+
+    /** 保存成功、失败或超时回退结束后，都强制收敛到终止阶段。 */
+    @Synchronized
+    private fun finishSaving() {
+        if (phase == GamePhase.SAVING) {
             state.transitionTo(GamePhase.FINISHED)
         }
     }
@@ -273,7 +295,7 @@ class GameManager(
      */
     fun voteForRemake(player: Player) {
         val audience = adventure.player(player)
-        if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.ENDING) {
+        if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.ENDING || phase == GamePhase.SAVING) {
             audience.sendMessage(Component.text("游戏中不能重开", NamedTextColor.RED))
             return
         }

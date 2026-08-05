@@ -48,7 +48,6 @@ import xyz.fortern.minehunt.game.CompletedGameRecord
 import xyz.fortern.minehunt.game.GameManager
 import xyz.fortern.minehunt.game.GameOutcome
 import xyz.fortern.minehunt.game.GamePhase
-import xyz.fortern.minehunt.game.GameRecordService
 import xyz.fortern.minehunt.game.Lobby
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.mode.manhunt.record.PlayerInMinehunt
@@ -66,7 +65,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
 import xyz.fortern.minehunt.game.GameMode as RuntimeGameMode
@@ -80,7 +78,6 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
  */
 class ManhuntGame(
     private val gameManager: GameManager,
-    private val records: GameRecordService,
     private val plugin: JavaPlugin,
     private val adventure: BukkitAudiences,
 ) : RuntimeGameMode {
@@ -263,12 +260,6 @@ class ManhuntGame(
 
     // bukkit task end
 
-    /** 初始记录写入产生的 ID；最终记录会等待该 future 完成。 */
-    private var initialRecordId: CompletableFuture<Int> = CompletableFuture.completedFuture(0)
-
-    @Volatile
-    private var recordId: Int = 0
-
     companion object {
         private const val RULE_LIST = "rule-list"
         private const val GAME_RESULT = "game-result"
@@ -337,7 +328,7 @@ class ManhuntGame(
      * 获取玩家所在的阵营
      */
     fun getFaction(player: OfflinePlayer): Faction? {
-        return if (gameManager.phase == GamePhase.RUNNING || gameManager.phase == GamePhase.ENDING || gameManager.phase == GamePhase.FINISHED) {
+        return if (gameManager.phase == GamePhase.RUNNING || gameManager.phase == GamePhase.ENDING || gameManager.phase == GamePhase.SAVING || gameManager.phase == GamePhase.FINISHED) {
             if (speedrunnerSet.contains(player.uniqueId)) {
                 Faction.SPEEDRUN
             } else if (hunterSet.contains(player.uniqueId)) {
@@ -442,8 +433,6 @@ class ManhuntGame(
         firstTimeInTheEnd = null
         firstPlayerInNether = null
         firstPlayerInTheEnd = null
-        recordId = 0
-        initialRecordId = CompletableFuture.completedFuture(0)
         speedrunnerSet.clear()
         hunterSet.clear()
         outPlayers.clear()
@@ -543,41 +532,12 @@ class ManhuntGame(
         Bukkit.getOnlinePlayers().forEach { player ->
             adventure.player(player).sendMessage(Component.text("--------游戏开始-------", NamedTextColor.GREEN))
         }
-        val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
-        val gameRecord = GameRecord(
-            0,
-            GameModeId.MANHUNT,
-            startTime,
-            startTime,
-            Duration.ZERO,
-            FinishType.NULL,
-            listOf(
-                FactionInfo(
-                    Faction.HUNTER.name,
-                    hunterTeam.color,
-                    0,
-                    hunterSet.toList(),
-                ),
-                FactionInfo(
-                    Faction.SPEEDRUN.name,
-                    speedrunnerTeam.color,
-                    0,
-                    speedrunnerSet.toList(),
-                )
-            ),
-            worldSeeds[overworld.name]!!,
-            worldSeeds,
-            MinehuntRecord.empty()
-        )
-        initialRecordId = records.saveInitial(gameRecord).also { future ->
-            future.thenAccept { recordId = it }
-        }
     }
 
     /**
      * 结束处理
      */
-    override fun finish(outcome: GameOutcome) {
+    override fun finish(outcome: GameOutcome): CompletedGameRecord {
         val winner = outcome.winnerRole?.let(Faction::fromRole)
         val finishType = outcome.finishType
         val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
@@ -622,22 +582,19 @@ class ManhuntGame(
             firstPlayerInTheEnd?.uniqueId,
         )
 
-        val buildGameRecord = { recordId: Int ->
-            GameRecord(
-                recordId,
-                GameModeId.MANHUNT,
-                startTime,
-                endTime,
-                Duration.between(startTime, endTime),
-                finishType,
-                listOf(factionInfo1, factionInfo2).sortedBy { it.rank },
-                worldSeeds[overworld.name]!!,
-                worldSeeds,
-                modeDetails,
-            )
-        }
-        val displayedRecordId = recordId
-        val gameRecord = buildGameRecord(displayedRecordId)
+        val gameRecord = GameRecord(
+            0,
+            UUID.randomUUID(),
+            GameModeId.MANHUNT,
+            startTime,
+            endTime,
+            Duration.between(startTime, endTime),
+            finishType,
+            listOf(factionInfo1, factionInfo2).sortedBy { it.rank },
+            worldSeeds[overworld.name]!!,
+            worldSeeds,
+            modeDetails,
+        )
 
         // 计分板显示
         overScoreboard(gameRecord, winner)
@@ -645,7 +602,7 @@ class ManhuntGame(
         val resultInfo = Component.text()
             .append(Component.text("=====对局信息=====", NamedTextColor.GREEN))
             .appendNewline()
-            .append(Component.text(if (displayedRecordId == 0) "对局ID: 保存中" else "对局ID: $displayedRecordId"))
+            .append(Component.text("对局ID: 保存中"))
             .appendNewline()
             .append(
                 Component.text(
@@ -793,14 +750,7 @@ class ManhuntGame(
                     oreTmpMap.mapKeys { it.key.key.toString() })
             )
         }
-        records.saveFinal(initialRecordId) { recordId ->
-            CompletedGameRecord(
-                buildGameRecord(recordId),
-                playerRecords.map {
-                    PlayerInGame(it.player, recordId, it.rank, it.details)
-                },
-            )
-        }
+        return CompletedGameRecord(gameRecord, playerRecords)
     }
 
     /**
@@ -956,7 +906,7 @@ class ManhuntGame(
             "${ChatColor.DARK_AQUA}猎人模式 Game Over"
         )
         objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
-        objective.getScore("对局ID: ${gameRecord.id}").score = 14
+        objective.getScore(if (gameRecord.id == 0) "对局ID: 保存中" else "对局ID: ${gameRecord.id}").score = 14
         objective.getScore("开始时间: ${gameRecord.startTime.atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
         objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.toSeconds() * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11

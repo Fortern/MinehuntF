@@ -64,8 +64,8 @@ interface GameMode : AutoCloseable {
     /** 取消当前模式为本局创建的全部 Bukkit 任务。 */
     fun cancelTasks()
 
-    /** 处理已经确定的结果、恢复玩家状态并提交最终记录。 */
-    fun finish(outcome: GameOutcome)
+    /** 处理已经确定的结果、恢复玩家状态并生成只包含普通数据的最终记录快照。 */
+    fun finish(outcome: GameOutcome): CompletedGameRecord
 
     /** 游戏进行中根据开局参赛者快照恢复重新上线玩家的身份。 */
     fun rejoin(player: Player)

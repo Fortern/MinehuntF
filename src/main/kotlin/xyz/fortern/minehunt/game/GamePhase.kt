@@ -18,16 +18,21 @@ enum class GamePhase {
     /** 已停止游戏任务，当前模式正在生成结果。 */
     ENDING,
 
-    /** 结果处理完成，等待服务端重开或关闭。 */
+    /** 最终记录已经生成，正在写入数据库或回退到本地文件。 */
+    SAVING,
+
+    /** 最终记录已完成保存尝试，等待服务端重开或关闭。 */
     FINISHED,
 }
 
 /** 约束 [GamePhase] 只能按照已定义的生命周期顺序转换。 */
 class GameStateMachine(initialPhase: GamePhase = GamePhase.LOBBY) {
     /** 当前生命周期阶段，只能由 [transitionTo] 修改。 */
+    @Volatile
     var phase: GamePhase = initialPhase
         private set
 
+    @Synchronized
     fun transitionTo(next: GamePhase) {
         require(next in allowedTransitions.getValue(phase)) {
             "Invalid game phase transition: $phase -> $next"
@@ -40,7 +45,8 @@ class GameStateMachine(initialPhase: GamePhase = GamePhase.LOBBY) {
             GamePhase.LOBBY to setOf(GamePhase.COUNTDOWN),
             GamePhase.COUNTDOWN to setOf(GamePhase.LOBBY, GamePhase.RUNNING),
             GamePhase.RUNNING to setOf(GamePhase.ENDING),
-            GamePhase.ENDING to setOf(GamePhase.FINISHED),
+            GamePhase.ENDING to setOf(GamePhase.SAVING),
+            GamePhase.SAVING to setOf(GamePhase.FINISHED),
             GamePhase.FINISHED to setOf(GamePhase.LOBBY),
         )
     }

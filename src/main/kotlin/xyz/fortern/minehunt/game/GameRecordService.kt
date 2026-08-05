@@ -1,92 +1,118 @@
 package xyz.fortern.minehunt.game
 
-import org.bukkit.plugin.java.JavaPlugin
-import org.bukkit.scheduler.BukkitTask
 import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.storage.StorageManager
+import java.nio.file.Path
+import java.time.Duration
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.logging.Level
+import java.util.logging.Logger
 
-/**
- * 一次最终持久化所需的完整数据。
- *
- * @property game 对局级记录
- * @property players 本局所有参赛者的模式专属记录
- */
+/** 一次最终持久化所需的完整普通数据快照。 */
 data class CompletedGameRecord(
     val game: GameRecord,
     val players: List<PlayerInGame>,
 )
 
 /**
- * 在不阻塞服务器主线程的情况下，顺序执行初始记录插入和最终记录更新。
+ * 在独立线程中插入最终记录；数据库失败或超时后立即回退到本地文件。
+ *
+ * 传入的 [CompletedGameRecord] 必须已在服务器主线程中构造完成，本类不会访问 Bukkit API。
  */
-class GameRecordService(
-    private val plugin: JavaPlugin,
-    private val storageManager: StorageManager,
+class GameRecordService internal constructor(
+    private val logger: Logger,
+    private val saveTimeout: Duration,
+    private val executor: ExecutorService,
+    private val databaseSave: (CompletedGameRecord) -> Int,
+    private val localSave: (CompletedGameRecord) -> Path,
 ) : AutoCloseable {
-    private val tasks = ConcurrentHashMap.newKeySet<BukkitTask>()
+    private val databaseTasks = ConcurrentHashMap.newKeySet<CompletableFuture<Int>>()
 
     @Volatile
     private var closed = false
 
-    /**
-     * 异步写入开局快照，并返回用于发布生成 ID 的 future。
-     */
-    fun saveInitial(record: GameRecord): CompletableFuture<Int> {
-        val recordId = CompletableFuture<Int>()
-        if (!runAsync {
-            val id = try {
-                storageManager.saveWholeGameRecord(record, null)
-            } catch (error: Throwable) {
-                plugin.logger.log(Level.SEVERE, "保存初始对局记录失败", error)
-                0
-            }
-            recordId.complete(id)
-        }) {
-            recordId.complete(0)
-        }
-        return recordId
+    constructor(storageManager: StorageManager, logger: Logger) : this(
+        logger,
+        Duration.ofSeconds(5),
+        Executors.newSingleThreadExecutor { action ->
+            Thread(action, "minehunt-game-record-save").apply { isDaemon = true }
+        },
+        { record -> storageManager.insertGameRecord(record.game, record.players) },
+        { record -> storageManager.saveToLocalFile(record.game, record.players) },
+    )
+
+    init {
+        require(!saveTimeout.isZero && !saveTimeout.isNegative) { "Save timeout must be positive" }
     }
 
     /**
-     * 等待初始写入完成后异步构造并保存最终记录。
+     * 启动一次且仅一次数据库插入。
      *
-     * [recordFactory] 在线程外执行，只能使用调用前捕获的普通数据，不得在其中访问 Bukkit API。
-     * 初始写入失败时会以 `0` 作为 ID，让存储层尝试直接插入最终记录。
+     * 返回的 future 总会正常完成，使生命周期无论保存结果如何都能离开 SAVING 阶段。
      */
-    fun saveFinal(initialRecordId: CompletableFuture<Int>, recordFactory: (Int) -> CompletedGameRecord) {
-        initialRecordId.whenComplete { initialId, error ->
-            val usableId = if (error == null) initialId else 0
-            runAsync {
+    fun save(record: CompletedGameRecord): CompletableFuture<Unit> {
+        val databaseTask: CompletableFuture<Int>
+        synchronized(this) {
+            if (closed) {
+                return CompletableFuture.completedFuture(
+                    saveLocally(record, CancellationException("Game record service is closed"))
+                )
+            }
+            databaseTask = try {
+                CompletableFuture.supplyAsync({ databaseSave(record) }, executor)
+            } catch (error: Throwable) {
+                return CompletableFuture.completedFuture(saveLocally(record, error))
+            }
+            databaseTasks.add(databaseTask)
+        }
+
+        return databaseTask
+            .orTimeout(saveTimeout.toMillis(), TimeUnit.MILLISECONDS)
+            .handle { databaseId, error ->
                 try {
-                    val completed = recordFactory(usableId)
-                    storageManager.saveWholeGameRecord(completed.game, completed.players)
-                } catch (saveError: Throwable) {
-                    plugin.logger.log(Level.SEVERE, "保存最终对局记录失败", saveError)
+                    if (error == null && databaseId != null && databaseId > 0) {
+                        Unit
+                    } else {
+                        saveLocally(
+                            record,
+                            unwrap(error) ?: IllegalStateException("Database insert returned no generated ID"),
+                        )
+                    }
+                } finally {
+                    databaseTasks.remove(databaseTask)
                 }
             }
+    }
+
+    private fun saveLocally(record: CompletedGameRecord, databaseError: Throwable) {
+        logger.log(Level.WARNING, "数据库保存对局记录失败，正在回退到本地文件", databaseError)
+        try {
+            val file = localSave(record)
+            logger.log(Level.WARNING, "对局记录已回退保存到本地文件: {0}", file)
+        } catch (localError: Throwable) {
+            logger.log(Level.SEVERE, "数据库与本地文件均无法保存对局记录", localError)
         }
     }
 
-    @Synchronized
-    private fun runAsync(action: () -> Unit): Boolean {
-        if (closed) return false
-        return try {
-            tasks.add(plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable(action)))
-            true
-        } catch (error: IllegalStateException) {
-            false
-        }
-    }
+    private fun unwrap(error: Throwable?): Throwable? =
+        if (error is CompletionException && error.cause != null) error.cause else error
 
+    /** 插件关闭时让尚未完成的数据库任务立即走本地回退，并停止保存线程。 */
     @Synchronized
     override fun close() {
         if (closed) return
         closed = true
-        tasks.forEach(BukkitTask::cancel)
-        tasks.clear()
+        databaseTasks.toList().forEach {
+            it.completeExceptionally(CancellationException("Plugin is shutting down"))
+        }
+        executor.shutdownNow()
     }
+
 }

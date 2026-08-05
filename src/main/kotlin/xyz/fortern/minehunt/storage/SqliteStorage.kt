@@ -33,6 +33,7 @@ class SqliteStorage(
         private const val CREATE_GAME_RECORD = """
             CREATE TABLE IF NOT EXISTS $GAME_RECORD (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
+                uuid           TEXT    NOT NULL UNIQUE,
                 mode           TEXT    NOT NULL,
                 start_time     INTEGER NOT NULL,
                 end_time       INTEGER NOT NULL,
@@ -76,14 +77,8 @@ class SqliteStorage(
 
         @Language("SQL")
         private const val INSERT_INTO_GAME_RECORD = """
-            INSERT INTO $GAME_RECORD (mode, start_time, end_time, duration, finish_type, overworld_seed, seeds, result)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-        """
-
-        @Language("SQL")
-        private const val UPDATE_GAME_RECORD = """
-            UPDATE $GAME_RECORD SET mode = ?, start_time = ?, end_time = ?, duration = ?, finish_type = ?, overworld_seed = ?, seeds = ?, result = ?
-            WHERE id = ?;
+            INSERT INTO $GAME_RECORD (uuid, mode, start_time, end_time, duration, finish_type, overworld_seed, seeds, result)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
 
         @Language("SQL")
@@ -92,13 +87,9 @@ class SqliteStorage(
         """
 
         @Language("SQL")
-        private const val UPSERT_MINEHUNT_RECORD = """
+        private const val INSERT_INTO_MINEHUNT_RECORD = """
             INSERT INTO $MINEHUNT_RECORD (first_time_to_nether, first_time_to_the_end, first_player_to_nether, first_player_to_the_end, game_id)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (game_id)
-            DO UPDATE SET first_time_to_nether = ?, first_time_to_the_end = ?, first_player_to_nether = ?, first_player_to_the_end = ?
-            WHERE game_id = ?;
-            ;
+            VALUES (?, ?, ?, ?, ?);
         """
 
         @Language("SQL")
@@ -125,8 +116,9 @@ class SqliteStorage(
 
     // 或许需要一个合适的ORM框架
 
-    override fun saveWholeGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>?): Int {
-        var realGameId = gameRecord.id
+    override fun insertGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>): Int {
+        require(gameRecord.id == 0) { "A new game record must not already have a database ID" }
+        var realGameId = 0
         val connection = try {
             dataSource.connection
         } catch (e: Exception) {
@@ -136,16 +128,16 @@ class SqliteStorage(
         connection.use {
             try {
                 it.autoCommit = false
-                // ======== insert into / update GameRecord start ========
-                realGameId = upsertGameRecord(gameRecord, it)
-                // ======== insert into / update GameRecord end ========
+                // ======== insert into GameRecord start ========
+                realGameId = insertGameRow(gameRecord, it)
+                // ======== insert into GameRecord end ========
 
-                // ======== insert into / update GameModeRecord start ========
-                upsertGameModeDetails(gameRecord.details, realGameId, connection)
-                // ======== insert into / update GameModeRecord end ========
+                // ======== insert into GameModeRecord start ========
+                insertGameModeDetails(gameRecord.details, realGameId, connection)
+                // ======== insert into GameModeRecord end ========
 
                 // ======== insert into PlayerRecord start ========
-                if (!players.isNullOrEmpty()) {
+                if (players.isNotEmpty()) {
                     it.prepareStatement(INSERT_INTO_PLAYER_IN_GAME).use { statement ->
                         players.forEach { playerInGame ->
                             statement.setInt(1, realGameId)
@@ -175,73 +167,53 @@ class SqliteStorage(
     /**
      * 向数据库中插入 gameRecord，返回主键
      */
-    private fun upsertGameRecord(gameRecord: GameRecord, connection: Connection): Int {
-        val insert = gameRecord.id == 0
+    private fun insertGameRow(gameRecord: GameRecord, connection: Connection): Int {
         val realGameId: Int
-        val statement1 = if (insert) {
-            connection.prepareStatement(INSERT_INTO_GAME_RECORD, Statement.RETURN_GENERATED_KEYS)
-        } else {
-            connection.prepareStatement(UPDATE_GAME_RECORD)
-        }
+        val statement1 = connection.prepareStatement(INSERT_INTO_GAME_RECORD, Statement.RETURN_GENERATED_KEYS)
         statement1.use {
-            it.setString(1, gameRecord.mode.toString())
-            it.setLong(2, gameRecord.startTime.toEpochMilli())
-            it.setLong(3, gameRecord.endTime.toEpochMilli())
-            it.setLong(4, gameRecord.duration.toMillis())
-            it.setString(5, gameRecord.finishType.toString())
-            it.setLong(6, gameRecord.overworldSeed)
-            it.setString(7, gson.toJson(gameRecord.worldSeeds))
-            it.setString(8, gson.toJson(gameRecord.result))
-            if (!insert) {
-                it.setInt(9, gameRecord.id)
-            }
+            it.setString(1, gameRecord.uuid.toString())
+            it.setString(2, gameRecord.mode.toString())
+            it.setLong(3, gameRecord.startTime.toEpochMilli())
+            it.setLong(4, gameRecord.endTime.toEpochMilli())
+            it.setLong(5, gameRecord.duration.toMillis())
+            it.setString(6, gameRecord.finishType.toString())
+            it.setLong(7, gameRecord.overworldSeed)
+            it.setString(8, gson.toJson(gameRecord.worldSeeds))
+            it.setString(9, gson.toJson(gameRecord.result))
             it.executeUpdate()
-            realGameId = if (insert) {
-                it.generatedKeys.let { resultSet ->
-                    resultSet.next()
-                    resultSet.getInt(1)
-                }
-            } else {
-                gameRecord.id
+            realGameId = it.generatedKeys.let { resultSet ->
+                check(resultSet.next()) { "Database did not return a generated game ID" }
+                resultSet.getInt(1)
             }
         }
         return realGameId
     }
 
     /**
-     * 插入或更新 gameDetails
+     * 插入 gameDetails
      */
     @Throws(SQLException::class)
-    private fun upsertGameModeDetails(gameDetails: GameDetails, realGameId: Int, connection: Connection) {
+    private fun insertGameModeDetails(gameDetails: GameDetails, realGameId: Int, connection: Connection) {
         if (gameDetails is MinehuntRecord) {
-            val statement = connection.prepareStatement(UPSERT_MINEHUNT_RECORD)
+            val statement = connection.prepareStatement(INSERT_INTO_MINEHUNT_RECORD)
             statement.use { statement ->
                 gameDetails.firstTimeToNether.let {
                     if (it == null) {
                         statement.setNull(1, Types.BIGINT)
-                        statement.setNull(1 + 5, Types.BIGINT)
                     } else {
                         statement.setLong(1, it.toEpochMilli())
-                        statement.setLong(1 + 5, it.toEpochMilli())
                     }
                 }
                 gameDetails.firstTimeToTheEnd.let {
                     if (it == null) {
                         statement.setNull(2, Types.BIGINT)
-                        statement.setNull(2 + 5, Types.BIGINT)
                     } else {
                         statement.setLong(2, it.toEpochMilli())
-                        statement.setLong(2 + 5, it.toEpochMilli())
                     }
                 }
-                var playerUUID = gameDetails.firstPlayerToNether?.toString()
-                statement.setString(3, playerUUID)
-                statement.setString(3 + 5, playerUUID)
-                playerUUID = gameDetails.firstPlayerToTheEnd?.toString()
-                statement.setString(4, playerUUID)
-                statement.setString(4 + 5, playerUUID)
+                statement.setString(3, gameDetails.firstPlayerToNether?.toString())
+                statement.setString(4, gameDetails.firstPlayerToTheEnd?.toString())
                 statement.setInt(5, realGameId)
-                statement.setInt(5 + 5, realGameId)
                 statement.executeUpdate()
             }
         }
