@@ -198,7 +198,6 @@ class GameManager(
      *
      * 非游戏进行阶段调用时不会产生效果。
      */
-    @Synchronized
     fun finish(outcome: GameOutcome) {
         if (phase != GamePhase.RUNNING) return
         state.transitionTo(GamePhase.ENDING)

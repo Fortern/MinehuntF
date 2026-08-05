@@ -4,7 +4,7 @@ import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
-import java.util.UUID
+import java.util.*
 
 /**
  * 将纯投票状态与 Bukkit 超时任务组合成一次限时赞成票。
@@ -123,9 +123,23 @@ class VoteProcess(
     }
 }
 
+/**
+ * 投票行为产生的结果
+ */
 internal enum class VoteResult {
+    /**
+     * 投票被拒绝，比如投票者无权投票
+     */
     REJECTED,
+
+    /**
+     * 投票被接受，但最终结果尚未确定
+     */
     ACCEPTED,
+
+    /**
+     * 投票被接受，且该票决定了最终结果
+     */
     PASSED,
 }
 
