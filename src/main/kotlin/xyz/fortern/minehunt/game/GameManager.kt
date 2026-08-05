@@ -200,7 +200,7 @@ class GameManager(
      */
     fun finish(outcome: GameOutcome) {
         if (phase != GamePhase.RUNNING) return
-        state.transitionTo(GamePhase.ENDING)
+        state.transitionTo(GamePhase.SAVING)
         endedAt = Instant.now()
         currentMode.cancelTasks()
         if (voteForStop.isRunning()) {
@@ -213,12 +213,10 @@ class GameManager(
             currentMode.finish(outcome)
         } catch (error: Throwable) {
             plugin.logger.log(Level.SEVERE, "生成最终对局记录失败", error)
-            state.transitionTo(GamePhase.SAVING)
             state.transitionTo(GamePhase.FINISHED)
             return
         }
 
-        state.transitionTo(GamePhase.SAVING)
         try {
             records.save(completedRecord).whenCompleteAsync(
                 { result, error ->
@@ -229,7 +227,8 @@ class GameManager(
                         GameRecordSaveResult.FAILED
                     }
                     finishSaving(finalResult)
-                }, mainThreadExecutor,
+                },
+                mainThreadExecutor,
             )
         } catch (error: Throwable) {
             plugin.logger.log(Level.SEVERE, "启动对局记录保存任务失败", error)
@@ -315,7 +314,7 @@ class GameManager(
      */
     fun voteForRemake(player: Player) {
         val audience = adventure.player(player)
-        if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.ENDING || phase == GamePhase.SAVING) {
+        if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.SAVING) {
             audience.sendMessage(Component.text("游戏中不能重开", NamedTextColor.RED))
             return
         }

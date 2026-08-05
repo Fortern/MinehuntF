@@ -328,7 +328,7 @@ class ManhuntGame(
      * 获取玩家所在的阵营
      */
     fun getFaction(player: OfflinePlayer): Faction? {
-        return if (gameManager.phase == GamePhase.RUNNING || gameManager.phase == GamePhase.ENDING || gameManager.phase == GamePhase.SAVING || gameManager.phase == GamePhase.FINISHED) {
+        return if (gameManager.phase == GamePhase.RUNNING || gameManager.phase == GamePhase.SAVING || gameManager.phase == GamePhase.FINISHED) {
             if (speedrunnerSet.contains(player.uniqueId)) {
                 Faction.SPEEDRUN
             } else if (hunterSet.contains(player.uniqueId)) {

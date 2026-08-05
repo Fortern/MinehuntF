@@ -15,10 +15,7 @@ enum class GamePhase {
     /** 当前模式正在处理游戏事件和胜负条件。 */
     RUNNING,
 
-    /** 已停止游戏任务，当前模式正在生成结果。 */
-    ENDING,
-
-    /** 最终记录已经生成，正在写入数据库或回退到本地文件。 */
+    /** 已停止游戏任务，正在生成并保存最终记录。 */
     SAVING,
 
     /** 最终记录已完成保存尝试，等待服务端重开或关闭。 */
@@ -44,8 +41,7 @@ class GameStateMachine(initialPhase: GamePhase = GamePhase.LOBBY) {
         private val allowedTransitions = mapOf(
             GamePhase.LOBBY to setOf(GamePhase.COUNTDOWN),
             GamePhase.COUNTDOWN to setOf(GamePhase.LOBBY, GamePhase.RUNNING),
-            GamePhase.RUNNING to setOf(GamePhase.ENDING),
-            GamePhase.ENDING to setOf(GamePhase.SAVING),
+            GamePhase.RUNNING to setOf(GamePhase.SAVING),
             GamePhase.SAVING to setOf(GamePhase.FINISHED),
             GamePhase.FINISHED to setOf(GamePhase.LOBBY),
         )
