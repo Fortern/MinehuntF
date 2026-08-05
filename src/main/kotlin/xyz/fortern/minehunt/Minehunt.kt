@@ -38,7 +38,7 @@ class Minehunt : JavaPlugin() {
         Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager, adventure), this)
 
         // 注册命令
-        Bukkit.getPluginCommand("minehunt")!!.setExecutor(MinehuntCommand(gameManager, configManager, adventure, this))
+        Bukkit.getPluginCommand("game")!!.setExecutor(MinehuntCommand(gameManager, configManager, adventure, this))
     }
 
     override fun onDisable() {

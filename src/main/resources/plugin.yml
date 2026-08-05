@@ -14,6 +14,6 @@ libraries:
   - org.postgresql:postgresql:42.7.8
 
 commands:
-  minehunt:
+  game:
     description: "游戏主命令"
-    aliases: [mh]
+    aliases: [minehunt, mh]
