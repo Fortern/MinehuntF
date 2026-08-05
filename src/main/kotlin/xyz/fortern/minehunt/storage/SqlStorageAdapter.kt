@@ -20,7 +20,9 @@ abstract class SqlStorageAdapter(
     /** 在一个事务中插入最终对局及其玩家记录，返回生成的 ID，失败时返回 `0`。 */
     abstract fun insertGameRecord(gameRecord: GameRecord, players: List<PlayerInGame>): Int
 
+    /** 删除指定对局及其关联记录；仅当主记录存在并完成删除时返回 `true`。 */
     abstract fun deleteGameRecord(id: Int): Boolean
 
+    /** 按数据库主键读取完整对局记录；记录不存在或内容无法恢复时返回 `null`。 */
     abstract fun getGameRecordById(id: Int): GameRecord?
 }

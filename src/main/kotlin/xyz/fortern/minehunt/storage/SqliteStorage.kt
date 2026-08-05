@@ -2,16 +2,24 @@ package xyz.fortern.minehunt.storage
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
 import org.intellij.lang.annotations.Language
 import org.sqlite.SQLiteDataSource
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
+import xyz.fortern.minehunt.record.FactionInfo
+import xyz.fortern.minehunt.record.FinishType
 import xyz.fortern.minehunt.record.GameDetails
+import xyz.fortern.minehunt.record.GameMode
 import xyz.fortern.minehunt.record.GameRecord
 import xyz.fortern.minehunt.record.PlayerInGame
 import java.sql.Connection
+import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
 import java.sql.Types
+import java.time.Duration
+import java.time.Instant
+import java.util.*
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -87,6 +95,38 @@ class SqliteStorage(
         """
 
         @Language("SQL")
+        private const val DELETE_MINEHUNT_RECORD = """
+            DELETE FROM $MINEHUNT_RECORD WHERE game_id = ?;
+        """
+
+        @Language("SQL")
+        private const val DELETE_PLAYER_RECORDS = """
+            DELETE FROM $PLAYER_IN_GAME WHERE game_id = ?;
+        """
+
+        @Language("SQL")
+        private const val SELECT_GAME_RECORD = """
+            SELECT game.id,
+                   game.uuid,
+                   game.mode,
+                   game.start_time,
+                   game.end_time,
+                   game.duration,
+                   game.finish_type,
+                   game.overworld_seed,
+                   game.seeds,
+                   game.result,
+                   minehunt.game_id AS details_game_id,
+                   minehunt.first_time_to_nether,
+                   minehunt.first_time_to_the_end,
+                   minehunt.first_player_to_nether,
+                   minehunt.first_player_to_the_end
+            FROM $GAME_RECORD AS game
+            LEFT JOIN $MINEHUNT_RECORD AS minehunt ON minehunt.game_id = game.id
+            WHERE game.id = ?;
+        """
+
+        @Language("SQL")
         private const val INSERT_INTO_MINEHUNT_RECORD = """
             INSERT INTO $MINEHUNT_RECORD (first_time_to_nether, first_time_to_the_end, first_player_to_nether, first_player_to_the_end, game_id)
             VALUES (?, ?, ?, ?, ?);
@@ -99,6 +139,8 @@ class SqliteStorage(
         """
 
         private val gson = GsonBuilder().serializeNulls().create()
+        private val worldSeedsType = object : TypeToken<Map<String, Long>>() {}.type
+        private val factionResultsType = object : TypeToken<List<FactionInfo>>() {}.type
     }
 
     @Throws(SQLException::class)
@@ -220,10 +262,100 @@ class SqliteStorage(
     }
 
     override fun deleteGameRecord(id: Int): Boolean {
-        TODO("Not yet implemented")
+        val connection = try {
+            dataSource.connection
+        } catch (error: Exception) {
+            logger.log(Level.SEVERE, "Could not connect to the database.", error)
+            return false
+        }
+        connection.use {
+            return try {
+                it.autoCommit = false
+                connection.prepareStatement(DELETE_PLAYER_RECORDS).use { statement ->
+                    statement.setInt(1, id)
+                    statement.executeUpdate()
+                }
+                connection.prepareStatement(DELETE_MINEHUNT_RECORD).use { statement ->
+                    statement.setInt(1, id)
+                    statement.executeUpdate()
+                }
+                val deleted = connection.prepareStatement(DELETE_GAME_RECORD).use { statement ->
+                    statement.setInt(1, id)
+                    statement.executeUpdate()
+                } == 1
+                it.commit()
+                deleted
+            } catch (error: Throwable) {
+                logger.log(Level.SEVERE, "删除对局记录失败，正在回滚", error)
+                try {
+                    it.rollback()
+                } catch (rollbackError: SQLException) {
+                    logger.log(Level.SEVERE, "回滚失败", rollbackError)
+                }
+                false
+            }
+        }
     }
 
     override fun getGameRecordById(id: Int): GameRecord? {
-        TODO("Not yet implemented")
+        if (id <= 0) return null
+        val connection = try {
+            dataSource.connection
+        } catch (error: Exception) {
+            logger.log(Level.SEVERE, "Could not connect to the database.", error)
+            return null
+        }
+        connection.use {
+            return try {
+                it.prepareStatement(SELECT_GAME_RECORD).use { statement ->
+                    statement.setInt(1, id)
+                    statement.executeQuery().use { result ->
+                        if (!result.next()) null else readGameRecord(result)
+                    }
+                }
+            } catch (error: Throwable) {
+                logger.log(Level.SEVERE, "读取对局记录失败: $id", error)
+                null
+            }
+        }
+    }
+
+    private fun readGameRecord(result: ResultSet): GameRecord {
+        val mode = GameMode.valueOf(result.getString("mode"))
+        val details = when (mode) {
+            GameMode.MANHUNT -> {
+                check(result.getObject("details_game_id") != null) {
+                    "Missing Manhunt details for game ${result.getInt("id")}"
+                }
+                MinehuntRecord(
+                    readNullableInstant(result, "first_time_to_nether"),
+                    readNullableInstant(result, "first_time_to_the_end"),
+                    result.getString("first_player_to_nether")?.let(UUID::fromString),
+                    result.getString("first_player_to_the_end")?.let(UUID::fromString),
+                )
+            }
+
+            GameMode.BINGO -> error("Bingo game details are not implemented")
+        }
+        val worldSeeds: Map<String, Long> = gson.fromJson(result.getString("seeds"), worldSeedsType)
+        val factionResults: List<FactionInfo> = gson.fromJson(result.getString("result"), factionResultsType)
+        return GameRecord(
+            result.getInt("id"),
+            UUID.fromString(result.getString("uuid")),
+            mode,
+            Instant.ofEpochMilli(result.getLong("start_time")),
+            Instant.ofEpochMilli(result.getLong("end_time")),
+            Duration.ofMillis(result.getLong("duration")),
+            FinishType.valueOf(result.getString("finish_type")),
+            factionResults,
+            result.getLong("overworld_seed"),
+            worldSeeds,
+            details,
+        )
+    }
+
+    private fun readNullableInstant(result: ResultSet, column: String): Instant? {
+        val epochMillis = result.getLong(column)
+        return if (result.wasNull()) null else Instant.ofEpochMilli(epochMillis)
     }
 }
