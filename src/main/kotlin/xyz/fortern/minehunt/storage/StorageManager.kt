@@ -2,6 +2,7 @@ package xyz.fortern.minehunt.storage
 
 import com.mysql.cj.jdbc.MysqlDataSource
 import org.bukkit.plugin.java.JavaPlugin
+import org.postgresql.ds.PGSimpleDataSource
 import org.sqlite.SQLiteDataSource
 import xyz.fortern.minehunt.config.StorageConfiguration
 import xyz.fortern.minehunt.record.GameRecord
@@ -41,22 +42,25 @@ class StorageManager(
 
             MYSQL -> {
                 val mysql = storageConfiguration.mysql
-                MysqlDataSource().also {
+                val dataSource = MysqlDataSource().also {
                     it.setUrl("jdbc:mysql://${mysql.host}:${mysql.port}/${mysql.database}")
                     it.user = mysql.username
                     it.password = mysql.password
                 }
-                TODO()
+                MysqlStorage(dataSource, plugin.logger)
             }
 
             POSTGRES -> {
                 val postgresql = storageConfiguration.postgresql
-                MysqlDataSource().also {
-                    it.setUrl("jdbc:mysql://${postgresql.host}:${postgresql.port}/${postgresql.database}?currentSchema=${postgresql.schema}")
+                val dataSource = PGSimpleDataSource().also {
+                    it.serverNames = arrayOf(postgresql.host)
+                    it.portNumbers = intArrayOf(postgresql.port)
+                    it.databaseName = postgresql.database
+                    it.currentSchema = postgresql.schema
                     it.user = postgresql.username
                     it.password = postgresql.password
                 }
-                TODO()
+                PostgresStorage(dataSource, plugin.logger)
             }
         }
         // 初始化数据库表（网络IO耗时操作）

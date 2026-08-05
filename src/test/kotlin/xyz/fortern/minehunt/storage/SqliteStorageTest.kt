@@ -94,9 +94,10 @@ class SqliteStorageTest {
                     assertTrue(result.next())
                     assertEquals(1, result.getInt(1))
                 }
-                statement.executeQuery("SELECT COUNT(*) FROM player_in_game WHERE game_id = $gameId").use { result ->
+                statement.executeQuery("SELECT player_rank FROM player_in_game WHERE game_id = $gameId").use { result ->
                     assertTrue(result.next())
-                    assertEquals(1, result.getInt(1))
+                    assertEquals(1, result.getInt("player_rank"))
+                    assertFalse(result.next())
                 }
             }
         }
