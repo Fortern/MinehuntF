@@ -36,8 +36,9 @@ class GameRecordServiceTest {
             },
         )
 
-        service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
+        val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
 
+        assertEquals(GameRecordSaveResult.DATABASE, result)
         assertEquals(1, databaseCalls.get())
         assertFalse(localCalled.get())
     }
@@ -54,8 +55,9 @@ class GameRecordServiceTest {
             },
         )
 
-        service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
+        val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
 
+        assertEquals(GameRecordSaveResult.LOCAL_FILE, result)
         assertEquals(fallbackFile, savedFile)
     }
 
@@ -81,8 +83,9 @@ class GameRecordServiceTest {
             val future = service.save(completedRecord())
             assertTrue(databaseStarted.await(1, TimeUnit.SECONDS))
 
-            future.get(2, TimeUnit.SECONDS)
+            val result = future.get(2, TimeUnit.SECONDS)
 
+            assertEquals(GameRecordSaveResult.LOCAL_FILE, result)
             assertTrue(fallbackCalled.get())
         } finally {
             releaseDatabase.countDown()
@@ -97,7 +100,9 @@ class GameRecordServiceTest {
             localSave = { throw IllegalStateException("disk unavailable") },
         )
 
-        service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
+        val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
+
+        assertEquals(GameRecordSaveResult.FAILED, result)
     }
 
     private fun service(

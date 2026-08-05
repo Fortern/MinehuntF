@@ -21,6 +21,12 @@ data class CompletedGameRecord(
     val players: List<PlayerInGame>,
 )
 
+enum class GameRecordSaveResult {
+    DATABASE,
+    LOCAL_FILE,
+    FAILED,
+}
+
 /**
  * 在独立线程中插入最终记录；数据库失败或超时后立即回退到本地文件。
  *
@@ -55,9 +61,10 @@ class GameRecordService internal constructor(
     /**
      * 启动一次且仅一次数据库插入。
      *
-     * 返回的 future 总会正常完成，使生命周期无论保存结果如何都能离开 SAVING 阶段。
+     * 返回的 future 总会正常完成，并说明记录最终保存到了哪里；
+     * 生命周期无论保存结果如何都能离开 SAVING 阶段。
      */
-    fun save(record: CompletedGameRecord): CompletableFuture<Unit> {
+    fun save(record: CompletedGameRecord): CompletableFuture<GameRecordSaveResult> {
         val databaseTask: CompletableFuture<Int>
         synchronized(this) {
             if (closed) {
@@ -77,27 +84,25 @@ class GameRecordService internal constructor(
             .orTimeout(saveTimeout.toMillis(), TimeUnit.MILLISECONDS)
             .handle { databaseId, error ->
                 try {
-                    if (error == null && databaseId != null && databaseId > 0) {
-                        Unit
-                    } else {
-                        saveLocally(
-                            record,
-                            unwrap(error) ?: IllegalStateException("Database insert returned no generated ID"),
-                        )
-                    }
+                    if (error == null && databaseId != null && databaseId > 0)
+                        GameRecordSaveResult.DATABASE
+                    else
+                        saveLocally(record, unwrap(error) ?: IllegalStateException("Database insert returned no generated ID"))
                 } finally {
                     databaseTasks.remove(databaseTask)
                 }
             }
     }
 
-    private fun saveLocally(record: CompletedGameRecord, databaseError: Throwable) {
+    private fun saveLocally(record: CompletedGameRecord, databaseError: Throwable): GameRecordSaveResult {
         logger.log(Level.WARNING, "数据库保存对局记录失败，正在回退到本地文件", databaseError)
-        try {
+        return try {
             val file = localSave(record)
             logger.log(Level.WARNING, "对局记录已回退保存到本地文件: {0}", file)
+            GameRecordSaveResult.LOCAL_FILE
         } catch (localError: Throwable) {
             logger.log(Level.SEVERE, "数据库与本地文件均无法保存对局记录", localError)
+            GameRecordSaveResult.FAILED
         }
     }
 

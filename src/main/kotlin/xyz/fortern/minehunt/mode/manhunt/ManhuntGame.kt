@@ -906,7 +906,7 @@ class ManhuntGame(
             "${ChatColor.DARK_AQUA}猎人模式 Game Over"
         )
         objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
-        objective.getScore(if (gameRecord.id == 0) "对局ID: 保存中" else "对局ID: ${gameRecord.id}").score = 14
+        objective.getScore("对局ID: 保存中").score = 14
         objective.getScore("开始时间: ${gameRecord.startTime.atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
         objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.toSeconds() * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11

@@ -14,6 +14,7 @@ import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
 import java.time.Instant
 import java.util.*
+import java.util.concurrent.Executor
 import java.util.logging.Level
 import xyz.fortern.minehunt.record.GameMode as GameModeId
 
@@ -28,6 +29,9 @@ class GameManager(
     private val adventure: BukkitAudiences,
     private val records: GameRecordService,
 ) : AutoCloseable {
+    private val mainThreadExecutor = Executor { action ->
+        Bukkit.getScheduler().runTask(plugin, action)
+    }
     private val state = GameStateMachine()
     private val factories = LinkedHashMap<GameModeId, () -> GameMode>()
     private var countdownTask: BukkitTask? = null
@@ -217,18 +221,35 @@ class GameManager(
 
         state.transitionTo(GamePhase.SAVING)
         try {
-            records.save(completedRecord).whenComplete { _, _ -> finishSaving() }
+            records.save(completedRecord).whenCompleteAsync(
+                { result, error ->
+                    val finalResult = if (error == null && result != null) {
+                        result
+                    } else {
+                        plugin.logger.log(Level.SEVERE, "等待对局记录保存时发生未预期错误", error)
+                        GameRecordSaveResult.FAILED
+                    }
+                    finishSaving(finalResult)
+                }, mainThreadExecutor,
+            )
         } catch (error: Throwable) {
             plugin.logger.log(Level.SEVERE, "启动对局记录保存任务失败", error)
-            finishSaving()
+            finishSaving(GameRecordSaveResult.FAILED)
         }
     }
 
     /** 保存成功、失败或超时回退结束后，都强制收敛到终止阶段。 */
-    @Synchronized
-    private fun finishSaving() {
-        if (phase == GamePhase.SAVING) {
-            state.transitionTo(GamePhase.FINISHED)
+    private fun finishSaving(result: GameRecordSaveResult) {
+        if (phase != GamePhase.SAVING) return
+
+        state.transitionTo(GamePhase.FINISHED)
+        val message = when (result) {
+            GameRecordSaveResult.DATABASE -> Component.text("游戏记录已保存至数据库", NamedTextColor.GREEN)
+            GameRecordSaveResult.LOCAL_FILE -> Component.text("游戏记录已保存至文件", NamedTextColor.GREEN)
+            GameRecordSaveResult.FAILED -> Component.text("游戏记录保存失败", NamedTextColor.RED)
+        }
+        Bukkit.getOnlinePlayers().forEach {
+            adventure.player(it).sendMessage(message)
         }
     }
 
