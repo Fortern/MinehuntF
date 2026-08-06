@@ -1,8 +1,5 @@
 package xyz.fortern.minehunt.mode.manhunt
 
-import net.kyori.adventure.platform.bukkit.BukkitAudiences
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.apache.commons.lang3.time.DurationFormatUtils
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -79,7 +76,6 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
 class ManhuntGame(
     private val gameManager: GameManager,
     private val plugin: JavaPlugin,
-    private val adventure: BukkitAudiences,
 ) : RuntimeGameMode {
 
     /** Manhunt 准备阶段的成员和角色状态。 */
@@ -356,17 +352,17 @@ class ManhuntGame(
         when (role) {
             ROLE_HUNTER -> {
                 hunterTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入${hunterTeam.color}[猎人]"))
+                player.sendMessage("你已加入${hunterTeam.color}[猎人]")
             }
 
             ROLE_SPEEDRUNNER -> {
                 speedrunnerTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入${speedrunnerTeam.color}[速通者]"))
+                player.sendMessage("你已加入${speedrunnerTeam.color}[速通者]")
             }
 
             ROLE_AUDIENCE -> {
                 audienceTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入${audienceTeam.color}[观众]"))
+                player.sendMessage("你已加入${audienceTeam.color}[观众]")
             }
         }
         return true
@@ -395,17 +391,17 @@ class ManhuntGame(
         }
         if (hunterSet.contains(player.uniqueId)) {
             hunterTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入${hunterTeam.color}[猎人]"))
+            player.sendMessage("你已加入${hunterTeam.color}[猎人]")
             // 如果猎人在死亡后离开了游戏，导致没有切回生存模式，这里再检测一次
             if (!hunterRespawnTasks.containsKey(player.uniqueId) && player.gameMode != GameMode.SURVIVAL) {
                 player.gameMode = GameMode.SURVIVAL
             }
         } else if (speedrunnerSet.contains(player.uniqueId)) {
             speedrunnerTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入${speedrunnerTeam.color}[速通者]"))
+            player.sendMessage("你已加入${speedrunnerTeam.color}[速通者]")
         } else {
             audienceTeam.addEntry(player.name)
-            adventure.player(player).sendMessage(Component.text("你已加入${audienceTeam.color}[观众]"))
+            player.sendMessage("你已加入${audienceTeam.color}[观众]")
             player.gameMode = GameMode.SPECTATOR
         }
     }
@@ -507,7 +503,7 @@ class ManhuntGame(
             // 猎人设置初始状态
             hunterSet.forEach {
                 val player = Bukkit.getPlayer(it) ?: return@forEach
-                adventure.player(player).sendMessage(Component.text("你已到达出生点", NamedTextColor.RED))
+                player.sendMessage("${ChatColor.RED}你已到达出生点")
                 player.gameMode = GameMode.SURVIVAL
                 player.teleport(spawnLocation)
                 player.inventory.addItem(hunterCompass)
@@ -523,14 +519,14 @@ class ManhuntGame(
 
             // 通知速通者
             speedrunnerSet.forEach {
-                adventure.player(it).sendMessage(Component.text("猎人开始追杀", NamedTextColor.RED))
+                Bukkit.getPlayer(it)?.sendMessage("${ChatColor.RED}猎人开始追杀")
             }
             hunterSpawnCD = null
         }, gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_READY_CD) * 20L)
 
         scoreboard.getObjective("rule-list")!!.displaySlot = null
         Bukkit.getOnlinePlayers().forEach { player ->
-            adventure.player(player).sendMessage(Component.text("--------游戏开始-------", NamedTextColor.GREEN))
+            player.sendMessage("${ChatColor.GREEN}--------游戏开始-------")
         }
     }
 
@@ -548,11 +544,11 @@ class ManhuntGame(
         hunterRespawnTasks.clear()
         // 所有人设为生存模式
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
+            it.sendMessage("${ChatColor.GREEN}--------游戏结束--------")
             if (winner != null) {
-                adventure.player(it).sendMessage(Component.text("获胜者：${winner.displayName}", NamedTextColor.GOLD))
+                it.sendMessage("${ChatColor.GOLD}获胜者：${winner.displayName}")
             } else {
-                adventure.player(it).sendMessage(Component.text("没有赢家", NamedTextColor.GOLD))
+                it.sendMessage("${ChatColor.GOLD}没有赢家")
             }
             it.gameMode = GameMode.SURVIVAL
         }
@@ -599,23 +595,16 @@ class ManhuntGame(
         // 计分板显示
         overScoreboard(gameRecord, winner)
 
-        val resultInfo = Component.text()
-            .append(Component.text("=====对局信息=====", NamedTextColor.GREEN))
-            .appendNewline()
-            .append(Component.text("对局ID: 保存中"))
-            .appendNewline()
-            .append(
-                Component.text(
-                    "开始时间: ${startTime.atZone(ZoneId.systemDefault()).format(formatter)}"
-                )
-            )
-            .appendNewline()
-            .append(Component.text("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.seconds * 1000L)}"))
-            .appendNewline()
-            .append(Component.text("胜者: ${winner?.displayName}"))
+        val resultInfo = buildString {
+            appendLine("${ChatColor.GREEN}=====对局信息=====")
+            appendLine("对局ID: 保存中")
+            appendLine("开始时间: ${startTime.atZone(ZoneId.systemDefault()).format(formatter)}")
+            appendLine("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.seconds * 1000L)}")
+            append("胜者: ${winner?.displayName}")
+        }
 
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(resultInfo)
+            it.sendMessage(resultInfo)
         }
 
         // 玩家在该模式下的数据
@@ -646,96 +635,58 @@ class ManhuntGame(
                     killedByEntity[it] = n
                 }
             }
-            val playerInfo = Component.text()
-                .append(Component.text("=====你的数据=====", NamedTextColor.GREEN))
-                .appendNewline()
-                .append(Component.text("----击杀生物----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (killEntity.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        killEntity.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
-                        }
-                    }
-                )
-                .append(Component.text("----被生物击杀----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (killedByEntity.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        killedByEntity.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
-                        }
-                    }
-                )
-                .append(Component.text("----工具使用----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (toolsTmpMap.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        toolsTmpMap.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n"))
-                                .appendNewline()
-                        }
-                    }
-                )
-                .append(Component.text("----武器使用----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (weaponsTmpMap.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        weaponsTmpMap.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
-                        }
-                        val shootTimes = weaponsTmpMap.getOrDefault(Material.BOW, 0) + weaponsTmpMap.getOrDefault(Material.CROSSBOW, 0)
-                        if (shootTimes == 0) {
-                            return@also
-                        }
+            val playerInfo = buildString {
+                appendLine("${ChatColor.GREEN}=====你的数据=====")
+                appendLine("${ChatColor.YELLOW}----击杀生物----")
+                if (killEntity.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    killEntity.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                }
+
+                appendLine("${ChatColor.YELLOW}----被生物击杀----")
+                if (killedByEntity.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    killedByEntity.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                }
+
+                appendLine("${ChatColor.YELLOW}----工具使用----")
+                if (toolsTmpMap.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    toolsTmpMap.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                }
+
+                appendLine("${ChatColor.YELLOW}----武器使用----")
+                if (weaponsTmpMap.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    weaponsTmpMap.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                    val shootTimes = weaponsTmpMap.getOrDefault(Material.BOW, 0) +
+                        weaponsTmpMap.getOrDefault(Material.CROSSBOW, 0)
+                    if (shootTimes > 0) {
                         val hitRate = String.format("%.2f%%", arrowHits.getOrDefault(uuid, 0) * 100.0 / shootTimes)
-                        text.append(Component.text("箭矢命中率: $hitRate")).appendNewline()
+                        appendLine("箭矢命中率: $hitRate")
                     }
-                )
-                .append(Component.text("----食物食用----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (foodTmpMap.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        foodTmpMap.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
-                        }
-                    }.build()
-                )
-                .append(Component.text("----矿石开采----", NamedTextColor.YELLOW))
-                .appendNewline()
-                .append(
-                    Component.text().also { text ->
-                        if (oreTmpMap.isEmpty()) {
-                            text.append(Component.text("No data.")).appendNewline()
-                            return@also
-                        }
-                        oreTmpMap.forEach { (type, n) ->
-                            text.append(Component.translatable(type.translationKey)).append(Component.text(": $n")).appendNewline()
-                        }
-                    }.build()
-                )
-                .append(Component.text("----End.----", NamedTextColor.YELLOW))
-            adventure.player(uuid).sendMessage(playerInfo)
+                }
+
+                appendLine("${ChatColor.YELLOW}----食物食用----")
+                if (foodTmpMap.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    foodTmpMap.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                }
+
+                appendLine("${ChatColor.YELLOW}----矿石开采----")
+                if (oreTmpMap.isEmpty()) {
+                    appendLine("No data.")
+                } else {
+                    oreTmpMap.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
+                }
+                append("${ChatColor.YELLOW}----End.----")
+            }
+            Bukkit.getPlayer(uuid)?.sendMessage(playerInfo)
             val rank = if (winner == null) 0 else if (getFaction(player) == winner) 1 else 2
             PlayerInGame(
                 player.uniqueId,
@@ -796,7 +747,7 @@ class ManhuntGame(
         if (nextTrackRunner.isOnline && !outPlayers.contains(nextTrackRunner.uniqueId)) {
             refreshCompassTrack(hunter, nextTrackRunner.player!!)
         }
-        adventure.player(hunter).sendActionBar(Component.text("指向 ${nextTrackRunner.name}"))
+        hunter.sendMessage("指向 ${nextTrackRunner.name}")
     }
 
     /**
@@ -851,7 +802,7 @@ class ManhuntGame(
         } else if (faction == Faction.HUNTER) {
             // 猎人置为旁观者模式，稍后复活
             player.gameMode = GameMode.SPECTATOR
-            adventure.player(player).sendMessage(Component.text("等待重生"))
+            player.sendMessage("等待重生")
             hunterRespawnTasks.remove(uuid)?.cancel()
             hunterRespawnTasks[uuid] = plugin.server.scheduler.runTaskLater(plugin, Runnable {
                 player.gameMode = GameMode.SURVIVAL
@@ -859,6 +810,9 @@ class ManhuntGame(
             }, gameRules.getRuleValue(ManhuntRuleKeys.HUNTER_RESPAWN_CD) * 20L)
         }
     }
+
+    private fun readableName(enumName: String): String =
+        enumName.lowercase().replace('_', ' ')
 
     private fun initScoreboard() {
         // TODO 将使用更好的计分板API

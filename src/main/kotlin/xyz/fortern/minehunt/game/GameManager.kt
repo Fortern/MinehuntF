@@ -1,11 +1,7 @@
 package xyz.fortern.minehunt.game
 
-import net.kyori.adventure.platform.bukkit.BukkitAudiences
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.event.ClickEvent
-import net.kyori.adventure.text.format.NamedTextColor
-import net.kyori.adventure.title.Title
 import org.bukkit.Bukkit
+import org.bukkit.ChatColor
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
@@ -26,7 +22,6 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
  */
 class GameManager(
     private val plugin: JavaPlugin,
-    private val adventure: BukkitAudiences,
     private val records: GameRecordService,
 ) : AutoCloseable {
     private val mainThreadExecutor = Executor { action ->
@@ -60,22 +55,20 @@ class GameManager(
 
     private val voteForStop: VoteProcess = VoteProcess(plugin, 30L * 20, 0.8f, {
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------投票完成--------", NamedTextColor.GOLD))
+            it.sendMessage("${ChatColor.GOLD}--------投票完成--------")
         }
         finish(GameOutcome(null, FinishType.STOPPED))
     }, {
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("投票结束，票数不足"))
+            it.sendMessage("投票结束，票数不足")
         }
     }, {
         Bukkit.getOnlinePlayers().forEach {
             val votes = voteForStop.pollingNum()
             val players = voteForStop.playersNum()
-            adventure.player(it).sendMessage(
-                Component.text(
-                    "投票终止游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})",
-                    NamedTextColor.RED,
-                )
+            it.sendMessage(
+                "${ChatColor.RED}投票终止游戏 ($votes/$players) " +
+                    "(${String.format("%.2f%%", votes * 100.0 / players)})"
             )
         }
     })
@@ -83,7 +76,7 @@ class GameManager(
     private val voteForRemake: VoteProcess = VoteProcess(plugin, 30L * 20, 0.5f, {
         remakeScheduled = true
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------投票结束，5秒后游戏重开--------"))
+            it.sendMessage("--------投票结束，5秒后游戏重开--------")
         }
         remakeTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
             remakeTask = null
@@ -91,17 +84,15 @@ class GameManager(
         }, 5 * 20L)
     }, {
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(Component.text("--------投票结束，票数不足--------"))
+            it.sendMessage("--------投票结束，票数不足--------")
         }
     }, {
         Bukkit.getOnlinePlayers().forEach {
             val votes = voteForRemake.pollingNum()
             val players = voteForRemake.playersNum()
-            adventure.player(it).sendMessage(
-                Component.text(
-                    "投票重开游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})",
-                    NamedTextColor.RED,
-                )
+            it.sendMessage(
+                "${ChatColor.RED}投票重开游戏 ($votes/$players) " +
+                    "(${String.format("%.2f%%", votes * 100.0 / players)})"
             )
         }
     })
@@ -156,14 +147,12 @@ class GameManager(
         countdownTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
             if (--countdown > 0) {
                 Bukkit.getOnlinePlayers().forEach {
-                    adventure.player(it).showTitle(
-                        Title.title(
-                            Component.text(countdown.toString(), NamedTextColor.DARK_PURPLE),
-                            Component.text("开始倒计时", NamedTextColor.GRAY),
-                            0,
-                            20,
-                            0,
-                        )
+                    it.sendTitle(
+                        "${ChatColor.DARK_PURPLE}$countdown",
+                        "${ChatColor.GRAY}开始倒计时",
+                        0,
+                        20,
+                        0,
                     )
                 }
             } else {
@@ -213,7 +202,7 @@ class GameManager(
         if (voteForStop.isRunning()) {
             voteForStop.cancel()
             Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it).sendMessage(Component.text("投票取消", NamedTextColor.RED))
+                it.sendMessage("${ChatColor.RED}投票取消")
             }
         }
         val completedRecord = try {
@@ -249,12 +238,12 @@ class GameManager(
 
         state.transitionTo(GamePhase.FINISHED)
         val message = when (result) {
-            GameRecordSaveResult.DATABASE -> Component.text("游戏记录已保存至数据库", NamedTextColor.GREEN)
-            GameRecordSaveResult.LOCAL_FILE -> Component.text("游戏记录已保存至文件", NamedTextColor.GREEN)
-            GameRecordSaveResult.FAILED -> Component.text("游戏记录保存失败", NamedTextColor.RED)
+            GameRecordSaveResult.DATABASE -> "${ChatColor.GREEN}游戏记录已保存至数据库"
+            GameRecordSaveResult.LOCAL_FILE -> "${ChatColor.GREEN}游戏记录已保存至文件"
+            GameRecordSaveResult.FAILED -> "${ChatColor.RED}游戏记录保存失败"
         }
         Bukkit.getOnlinePlayers().forEach {
-            adventure.player(it).sendMessage(message)
+            it.sendMessage(message)
         }
     }
 
@@ -282,35 +271,29 @@ class GameManager(
      * 为终止本局投赞成票；第一票会按当前模式的有效参赛者名单创建表决。
      */
     fun voteForStop(player: Player) {
-        val audience = adventure.player(player)
         if (phase != GamePhase.RUNNING) {
-            audience.sendMessage(Component.text("只有游戏中才能投票", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}只有游戏中才能投票")
             return
         }
         val eligibleVoters = currentMode.stopVoters()
         if (player.uniqueId !in eligibleVoters) {
-            audience.sendMessage(Component.text("只有游戏中的玩家才能投票", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}只有游戏中的玩家才能投票")
             return
         }
         if (!voteForStop.isRunning()) {
             val voters = eligibleVoters.mapNotNull(Bukkit::getPlayer)
             Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it).sendMessage(
-                    Component.text("${player.name}发起了终止游戏的投票")
-                        .appendNewline()
-                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}"))
-                        .appendNewline()
-                        .append(Component.text("如果赞成请在${voteForStop.time / 20}秒内执行"))
-                        .append(
-                            Component.text(" /minehunt stop ", NamedTextColor.GREEN)
-                                .clickEvent(ClickEvent.suggestCommand("/minehunt stop"))
-                        )
+                it.sendMessage(
+                    "${player.name}发起了终止游戏的投票\n" +
+                        "投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}\n" +
+                        "如果赞成请在${voteForStop.time / 20}秒内执行 " +
+                        "${ChatColor.GREEN}/minehunt stop"
                 )
             }
             voteForStop.newVote(voters)
         }
         if (!voteForStop.canVote(player)) {
-            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}你不在可投票的名单中")
             return
         }
         voteForStop.onPlayerVote(player)
@@ -320,35 +303,29 @@ class GameManager(
      * 为关闭并重开服务端投赞成票；第一票会以当时全部在线玩家创建表决。
      */
     fun voteForRemake(player: Player) {
-        val audience = adventure.player(player)
         if (phase == GamePhase.RUNNING || phase == GamePhase.COUNTDOWN || phase == GamePhase.SAVING) {
-            audience.sendMessage(Component.text("游戏中不能重开", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}游戏中不能重开")
             return
         }
         if (remakeScheduled) {
-            audience.sendMessage(Component.text("正在重开......"))
+            player.sendMessage("正在重开......")
             return
         }
         if (!voteForRemake.isRunning()) {
             val voters = Bukkit.getOnlinePlayers().toList()
             if (voters.isEmpty()) return
             Bukkit.getOnlinePlayers().forEach {
-                adventure.player(it).sendMessage(
-                    Component.text("${player.name}发起了重开游戏的投票")
-                        .appendNewline()
-                        .append(Component.text("投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100)}"))
-                        .appendNewline()
-                        .append(Component.text("如果赞成请在${voteForRemake.time / 20}秒内执行"))
-                        .append(
-                            Component.text(" /minehunt remake ", NamedTextColor.GREEN)
-                                .clickEvent(ClickEvent.suggestCommand("/minehunt remake"))
-                        )
+                it.sendMessage(
+                    "${player.name}发起了重开游戏的投票\n" +
+                        "投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100)}\n" +
+                        "如果赞成请在${voteForRemake.time / 20}秒内执行 " +
+                        "${ChatColor.GREEN}/minehunt remake"
                 )
             }
             voteForRemake.newVote(voters)
         }
         if (!voteForRemake.canVote(player)) {
-            audience.sendMessage(Component.text("你不在可投票的名单中", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}你不在可投票的名单中")
             return
         }
         voteForRemake.onPlayerVote(player)

@@ -1,6 +1,5 @@
 package xyz.fortern.minehunt
 
-import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.Bukkit
 import org.bukkit.plugin.java.JavaPlugin
 import xyz.fortern.minehunt.command.MinehuntCommand
@@ -16,38 +15,34 @@ import xyz.fortern.minehunt.storage.StorageManager
 class Minehunt : JavaPlugin() {
 
     private lateinit var instance: Minehunt
-    private lateinit var adventure: BukkitAudiences
     private lateinit var gameManager: GameManager
     private lateinit var gameRecords: GameRecordService
 
     override fun onEnable() {
         this.instance = this
-        this.adventure = BukkitAudiences.create(this)
-
         // 处理配置
         this.saveDefaultConfig()
         val storageManager = StorageManager(this)
         val configManager = ConfigManager(this, storageManager)
 
         gameRecords = GameRecordService(storageManager, logger)
-        gameManager = GameManager(this, adventure, gameRecords)
+        gameManager = GameManager(this, gameRecords)
         gameManager.registerMode(GameMode.MANHUNT) {
-            ManhuntGame(gameManager, this, adventure)
+            ManhuntGame(gameManager, this)
         }
         gameManager.registerMode(GameMode.BINGO) {
-            BingoGame(gameManager, this, adventure)
+            BingoGame(gameManager, this)
         }
         gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件
-        Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager, adventure), this)
+        Bukkit.getPluginManager().registerEvents(GameLifecycleListener(gameManager), this)
 
         // 注册命令
-        Bukkit.getPluginCommand("game")!!.setExecutor(MinehuntCommand(gameManager, configManager, adventure, this))
+        Bukkit.getPluginCommand("game")!!.setExecutor(MinehuntCommand(gameManager, configManager, this))
     }
 
     override fun onDisable() {
         if (this::gameManager.isInitialized) gameManager.close()
         if (this::gameRecords.isInitialized) gameRecords.close()
-        this.adventure.close()
     }
 }

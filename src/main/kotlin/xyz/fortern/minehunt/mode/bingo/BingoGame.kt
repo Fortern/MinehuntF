@@ -1,8 +1,5 @@
 package xyz.fortern.minehunt.mode.bingo
 
-import net.kyori.adventure.platform.bukkit.BukkitAudiences
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.apache.commons.lang3.time.DurationFormatUtils
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -60,7 +57,6 @@ import xyz.fortern.minehunt.record.GameMode as GameModeId
 class BingoGame(
     private val gameManager: GameManager,
     private val plugin: JavaPlugin,
-    private val adventure: BukkitAudiences,
 ) : RuntimeGameMode {
     private val lobby = Lobby()
 
@@ -120,17 +116,17 @@ class BingoGame(
         when (role) {
             ROLE_RED -> {
                 redTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入红队", NamedTextColor.RED))
+                player.sendMessage("${ChatColor.RED}你已加入红队")
             }
 
             ROLE_BLUE -> {
                 blueTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入蓝队", NamedTextColor.BLUE))
+                player.sendMessage("${ChatColor.BLUE}你已加入蓝队")
             }
 
             ROLE_AUDIENCE -> {
                 audienceTeam.addEntry(player.name)
-                adventure.player(player).sendMessage(Component.text("你已加入观众", NamedTextColor.GRAY))
+                player.sendMessage("${ChatColor.GRAY}你已加入观众")
             }
         }
         return true
@@ -200,9 +196,7 @@ class BingoGame(
         Bukkit.getOnlinePlayers().forEach(::giveCardIfNeeded)
         showGameScoreboard()
         Bukkit.getOnlinePlayers().forEach { player ->
-            adventure.player(player).sendMessage(
-                Component.text("Bingo 开始！卡片种子：$cardSeed", NamedTextColor.GREEN)
-            )
+            player.sendMessage("${ChatColor.GREEN}Bingo 开始！卡片种子：$cardSeed")
         }
 
         scanTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable(::scanInventories), 1L, 1L)
@@ -215,19 +209,19 @@ class BingoGame(
             Faction.RED -> {
                 redTeam.addEntry(player.name)
                 player.gameMode = GameMode.SURVIVAL
-                adventure.player(player).sendMessage(Component.text("你已返回红队", NamedTextColor.RED))
+                player.sendMessage("${ChatColor.RED}你已返回红队")
             }
 
             Faction.BLUE -> {
                 blueTeam.addEntry(player.name)
                 player.gameMode = GameMode.SURVIVAL
-                adventure.player(player).sendMessage(Component.text("你已返回蓝队", NamedTextColor.BLUE))
+                player.sendMessage("${ChatColor.BLUE}你已返回蓝队")
             }
 
             null -> {
                 audienceTeam.addEntry(player.name)
                 player.gameMode = GameMode.SPECTATOR
-                adventure.player(player).sendMessage(Component.text("你以观众身份加入", NamedTextColor.GRAY))
+                player.sendMessage("${ChatColor.GRAY}你以观众身份加入")
             }
         }
         giveCardIfNeeded(player)
@@ -241,13 +235,13 @@ class BingoGame(
 
         Bukkit.getOnlinePlayers().forEach { player ->
             player.gameMode = GameMode.SURVIVAL
-            adventure.player(player).sendMessage(Component.text("--------游戏结束--------", NamedTextColor.GREEN))
+            player.sendMessage("${ChatColor.GREEN}--------游戏结束--------")
             val winnerMessage = when {
                 winner != null -> "获胜者：${winner.displayName}"
                 outcome.finishType == FinishType.FINISHED && winningLines.isNotEmpty() -> "双方同时完成连线，比赛平局"
                 else -> "比赛已终止，没有获胜者"
             }
-            adventure.player(player).sendMessage(Component.text(winnerMessage, NamedTextColor.GOLD))
+            player.sendMessage("${ChatColor.GOLD}$winnerMessage")
         }
 
         val redRank = rankFor(Faction.RED, winner, outcome.finishType)
@@ -297,7 +291,7 @@ class BingoGame(
     override fun giveSpecialItem(player: Player, item: String): Boolean {
         if (item != SPECIAL_ITEM_CARD) return false
         if (board == null) {
-            adventure.player(player).sendMessage(Component.text("Bingo 卡片尚未生成", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}Bingo 卡片尚未生成")
         } else {
             giveCardIfNeeded(player)
         }
@@ -377,9 +371,9 @@ class BingoGame(
     }
 
     private fun announceClaim(faction: Faction, player: Player, target: Material) {
-        val message = Component.text("${faction.displayName}的 ${player.name} 完成了 ", faction.textColor)
-            .append(Component.translatable(target.translationKey))
-        Bukkit.getOnlinePlayers().forEach { adventure.player(it).sendMessage(message) }
+        val targetName = target.name.lowercase().replace('_', ' ')
+        val message = "${faction.chatColor}${faction.displayName}的 ${player.name} 完成了 $targetName"
+        Bukkit.getOnlinePlayers().forEach { it.sendMessage(message) }
     }
 
     private fun snapshotTeam(role: String, destination: MutableSet<UUID>, team: Team) {
@@ -495,7 +489,7 @@ class BingoGame(
         if (player.inventory.contents.any(::isBingoCard)) return
         val leftovers = player.inventory.addItem(createCardItem())
         if (leftovers.isNotEmpty()) {
-            adventure.player(player).sendMessage(Component.text("背包已满，无法放入 Bingo 卡片", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}背包已满，无法放入 Bingo 卡片")
         }
     }
 
@@ -512,7 +506,7 @@ class BingoGame(
 
     private fun openCard(player: Player) {
         if (board == null) {
-            adventure.player(player).sendMessage(Component.text("Bingo 卡片尚未生成", NamedTextColor.RED))
+            player.sendMessage("${ChatColor.RED}Bingo 卡片尚未生成")
             return
         }
         val holder = BingoCardHolder()
@@ -647,10 +641,10 @@ class BingoGame(
     enum class Faction(
         val role: String,
         val displayName: String,
-        val textColor: NamedTextColor,
+        val chatColor: ChatColor,
     ) {
-        RED(ROLE_RED, "红队", NamedTextColor.RED),
-        BLUE(ROLE_BLUE, "蓝队", NamedTextColor.BLUE);
+        RED(ROLE_RED, "红队", ChatColor.RED),
+        BLUE(ROLE_BLUE, "蓝队", ChatColor.BLUE);
 
         companion object {
             fun fromRole(role: String): Faction = fromRoleOrNull(role)
