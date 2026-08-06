@@ -11,6 +11,7 @@ class MysqlStorage(
     override val schemaStatements = listOf(
         CREATE_GAME_RECORD,
         CREATE_MINEHUNT_RECORD,
+        CREATE_BINGO_RECORD,
         CREATE_PLAYER_IN_GAME,
     )
 
@@ -47,6 +48,17 @@ class MysqlStorage(
                 first_player_to_the_end CHAR(36),
                 PRIMARY KEY (game_id),
                 CONSTRAINT minehunt_record_game_fk FOREIGN KEY (game_id)
+                    REFERENCES $GAME_RECORD (id) ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE = InnoDB;
+        """
+
+        @Language("SQL")
+        private const val CREATE_BINGO_RECORD = """
+            CREATE TABLE IF NOT EXISTS $BINGO_RECORD (
+                game_id INT      NOT NULL,
+                details LONGTEXT NOT NULL,
+                PRIMARY KEY (game_id),
+                CONSTRAINT bingo_record_game_fk FOREIGN KEY (game_id)
                     REFERENCES $GAME_RECORD (id) ON DELETE CASCADE ON UPDATE CASCADE
             ) ENGINE = InnoDB;
         """

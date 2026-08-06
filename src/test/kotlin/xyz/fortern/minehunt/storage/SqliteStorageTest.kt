@@ -7,6 +7,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.sqlite.SQLiteDataSource
+import xyz.fortern.minehunt.mode.bingo.record.BingoClaimRecord
+import xyz.fortern.minehunt.mode.bingo.record.BingoRecord
+import xyz.fortern.minehunt.mode.bingo.record.BingoWinningLineRecord
+import xyz.fortern.minehunt.mode.bingo.record.PlayerInBingo
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.mode.manhunt.record.PlayerInMinehunt
 import xyz.fortern.minehunt.record.FactionInfo
@@ -113,6 +117,65 @@ class SqliteStorageTest {
                         assertTrue(result.next())
                         assertEquals(0, result.getInt(1))
                     }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `bingo details can be inserted loaded and deleted`() {
+        val testDirectory = Path.of("target", "test-data")
+        Files.createDirectories(testDirectory)
+        val databaseFile = testDirectory.resolve("bingo-${UUID.randomUUID()}.db")
+        val dataSource = SQLiteDataSource().also { it.url = "jdbc:sqlite:$databaseFile" }
+        val storage = SqliteStorage(dataSource, Logger.getLogger("BingoSqliteStorageTest"))
+        storage.prepareSchema()
+
+        val redPlayer = UUID.randomUUID()
+        val bluePlayer = UUID.randomUUID()
+        val claim = BingoClaimRecord("red", "minecraft:cobblestone", 0, redPlayer, 1_500)
+        val details = BingoRecord(
+            99L,
+            (0 until 25).map { "minecraft:target_$it" },
+            listOf(claim),
+            listOf(BingoWinningLineRecord("red", listOf(0, 1, 2, 3, 4))),
+        )
+        val game = GameRecord(
+            0,
+            UUID.randomUUID(),
+            GameMode.BINGO,
+            Instant.ofEpochMilli(1_000),
+            Instant.ofEpochMilli(6_000),
+            Duration.ofSeconds(5),
+            FinishType.FINISHED,
+            listOf(
+                FactionInfo("RED", ChatColor.RED, 1, listOf(redPlayer)),
+                FactionInfo("BLUE", ChatColor.BLUE, 2, listOf(bluePlayer)),
+            ),
+            42L,
+            mapOf("world" to 42L),
+            details,
+        )
+        val gameId = storage.insertGameRecord(
+            game,
+            listOf(PlayerInGame(redPlayer, 0, 1, PlayerInBingo("red", listOf("minecraft:cobblestone")))),
+        )
+
+        assertTrue(gameId > 0)
+        val loaded = checkNotNull(storage.getGameRecordById(gameId))
+        assertEquals(GameMode.BINGO, loaded.mode)
+        val loadedDetails = loaded.details as BingoRecord
+        assertEquals(99L, loadedDetails.cardSeed)
+        assertEquals(25, loadedDetails.targets.size)
+        assertEquals(redPlayer, loadedDetails.claims.single().player)
+        assertEquals(listOf(0, 1, 2, 3, 4), loadedDetails.winningLines.single().slots)
+
+        assertTrue(storage.deleteGameRecord(gameId))
+        dataSource.connection.use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT COUNT(*) FROM bingo_record WHERE game_id = $gameId").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(0, result.getInt(1))
                 }
             }
         }

@@ -23,7 +23,10 @@ class MinehuntCommand(
     private val plugin: JavaPlugin,
 ) : TabExecutor {
 
-    private val subCommands: List<String> = listOf("help", "join", "leave", "rule", "start", "stop", "give", "remake", "reload")
+    private val subCommands: List<String> =
+        listOf("help", "mode", "join", "leave", "rule", "start", "stop", "give", "remake", "reload")
+    private val modes: List<String>
+        get() = gameManager.registeredModes().map { it.name.lowercase() }
     private val teams: List<String>
         get() = gameManager.currentMode.roles
     private val rules: List<String>
@@ -35,6 +38,8 @@ class MinehuntCommand(
         Component.text("Minehunt v${plugin.description.version}", NamedTextColor.GREEN),
         Component.text("/minehunt help  ", NamedTextColor.GOLD)
             .append(Component.text("帮助信息", NamedTextColor.WHITE)),
+        Component.text("/minehunt mode [mode]  ", NamedTextColor.GOLD)
+            .append(Component.text("查看或切换游戏模式（切换需要管理员）", NamedTextColor.WHITE)),
         Component.text("/minehunt join <role>  ", NamedTextColor.GOLD)
             .append(Component.text("加入一个阵营", NamedTextColor.WHITE)),
         Component.text("/minehunt leave  ", NamedTextColor.GOLD)
@@ -107,6 +112,7 @@ class MinehuntCommand(
 
         return when (args[0]) {
             "help" -> onHelp(sender, flag)
+            "mode" -> onMode(sender, args, flag)
             "join" -> onJoin(sender, args, flag)
             "leave" -> onLeave(sender, flag)
             "rule" -> onRule(sender, args, flag)
@@ -128,6 +134,47 @@ class MinehuntCommand(
 
     private fun onHelp(sender: CommandSender, flag: Boolean): List<String>? {
         if (flag) sendHelp(sender)
+        return null
+    }
+
+    /** 查看当前模式，或由管理员在准备阶段切换模式。 */
+    private fun onMode(sender: CommandSender, args: List<String>, flag: Boolean): List<String>? {
+        if (args.size == 1) {
+            if (flag) {
+                adventure.sender(sender).sendMessage(
+                    Component.text("当前游戏模式：${gameManager.currentMode.id.name.lowercase()}", NamedTextColor.GREEN)
+                )
+            }
+            return if (flag) null else modes
+        }
+
+        val input = args[1]
+        if (!flag) return if (args.size == 2) modes.filter { it.startsWith(input, true) } else null
+        if (args.size > 2) {
+            adventure.sender(sender).sendMessage(Component.text("参数过多", NamedTextColor.RED))
+            return null
+        }
+        if (sender is Player && !sender.isOp) {
+            adventure.player(sender).sendMessage(Component.text("只有管理员可以切换游戏模式", NamedTextColor.RED))
+            return null
+        }
+        if (gameManager.phase != GamePhase.LOBBY) {
+            adventure.sender(sender).sendMessage(Component.text("只能在准备阶段切换游戏模式", NamedTextColor.RED))
+            return null
+        }
+        val mode = gameManager.registeredModes().firstOrNull { it.name.equals(input, true) }
+        if (mode == null) {
+            adventure.sender(sender).sendMessage(Component.text("不存在或尚未注册的游戏模式", NamedTextColor.RED))
+            return null
+        }
+        if (gameManager.currentMode.id == mode) {
+            adventure.sender(sender).sendMessage(Component.text("当前已经是 ${mode.name.lowercase()} 模式"))
+            return null
+        }
+        gameManager.selectMode(mode)
+        adventure.sender(sender).sendMessage(
+            Component.text("已切换到 ${mode.name.lowercase()} 模式", NamedTextColor.GREEN)
+        )
         return null
     }
 

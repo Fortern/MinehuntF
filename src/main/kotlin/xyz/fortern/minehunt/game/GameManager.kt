@@ -112,6 +112,9 @@ class GameManager(
         factories[id] = factory
     }
 
+    /** 按注册顺序返回当前可供大厅选择的模式。 */
+    fun registeredModes(): List<GameModeId> = factories.keys.toList()
+
     /**
      * 在准备阶段创建并选中一个全新的模式实例。
      *
@@ -123,6 +126,10 @@ class GameManager(
         deselectCurrentMode()
         currentMode = factory()
         plugin.server.pluginManager.registerEvents(currentMode.listener, plugin)
+        Bukkit.getOnlinePlayers().forEach { player ->
+            player.gameMode = org.bukkit.GameMode.ADVENTURE
+            currentMode.assignRole(player, currentMode.spectatorRole)
+        }
     }
 
     /** 注销旧模式监听器并释放模式资源。 */

@@ -11,6 +11,7 @@ class PostgresStorage(
     override val schemaStatements = listOf(
         CREATE_GAME_RECORD,
         CREATE_MINEHUNT_RECORD,
+        CREATE_BINGO_RECORD,
         CREATE_PLAYER_IN_GAME,
     )
 
@@ -44,6 +45,15 @@ class PostgresStorage(
                 first_time_to_the_end   BIGINT,
                 first_player_to_nether  VARCHAR(36),
                 first_player_to_the_end VARCHAR(36)
+            )
+        """
+
+        @Language("SQL")
+        private const val CREATE_BINGO_RECORD = """
+            CREATE TABLE IF NOT EXISTS $BINGO_RECORD (
+                game_id INTEGER PRIMARY KEY REFERENCES $GAME_RECORD (id)
+                                            ON DELETE CASCADE ON UPDATE CASCADE,
+                details TEXT NOT NULL
             )
         """
 

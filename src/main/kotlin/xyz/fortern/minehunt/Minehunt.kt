@@ -8,6 +8,7 @@ import xyz.fortern.minehunt.config.ConfigManager
 import xyz.fortern.minehunt.game.GameManager
 import xyz.fortern.minehunt.game.GameRecordService
 import xyz.fortern.minehunt.listener.GameLifecycleListener
+import xyz.fortern.minehunt.mode.bingo.BingoGame
 import xyz.fortern.minehunt.mode.manhunt.ManhuntGame
 import xyz.fortern.minehunt.record.GameMode
 import xyz.fortern.minehunt.storage.StorageManager
@@ -32,6 +33,9 @@ class Minehunt : JavaPlugin() {
         gameManager = GameManager(this, adventure, gameRecords)
         gameManager.registerMode(GameMode.MANHUNT) {
             ManhuntGame(gameManager, this, adventure)
+        }
+        gameManager.registerMode(GameMode.BINGO) {
+            BingoGame(gameManager, this, adventure)
         }
         gameManager.selectMode(GameMode.MANHUNT)
         // 注册事件

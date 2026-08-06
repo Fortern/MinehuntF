@@ -1031,6 +1031,11 @@ class ManhuntGame(
     }
 
     override fun close() {
+        scoreboard.getObjective(RULE_LIST)?.unregister()
+        scoreboard.getObjective(GAME_RESULT)?.unregister()
+        gameRules.getAllRules().keys.forEach { rule ->
+            scoreboard.getTeam("${ChatColor.GOLD}${rule.displayName}")?.unregister()
+        }
         listOf(speedrunnerTeam, hunterTeam, audienceTeam).forEach { team ->
             runCatching(team::unregister)
         }

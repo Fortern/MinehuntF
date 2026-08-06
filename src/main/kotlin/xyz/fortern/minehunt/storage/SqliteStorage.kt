@@ -11,6 +11,7 @@ class SqliteStorage(
     override val schemaStatements = listOf(
         CREATE_GAME_RECORD,
         CREATE_MINEHUNT_RECORD,
+        CREATE_BINGO_RECORD,
         CREATE_PLAYER_IN_GAME,
     )
 
@@ -45,6 +46,15 @@ class SqliteStorage(
                 first_player_to_the_end TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS game_id_idx ON $MINEHUNT_RECORD (game_id);
+        """
+
+        @Language("SQL")
+        private const val CREATE_BINGO_RECORD = """
+            CREATE TABLE IF NOT EXISTS $BINGO_RECORD (
+                game_id INTEGER REFERENCES $GAME_RECORD (id) ON DELETE CASCADE ON UPDATE CASCADE NOT NULL UNIQUE,
+                details TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS bingo_game_id_idx ON $BINGO_RECORD (game_id);
         """
 
         @Language("SQL")

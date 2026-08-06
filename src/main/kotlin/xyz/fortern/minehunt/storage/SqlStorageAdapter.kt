@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import org.intellij.lang.annotations.Language
+import xyz.fortern.minehunt.mode.bingo.record.BingoRecord
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.FactionInfo
 import xyz.fortern.minehunt.record.FinishType
@@ -41,6 +42,9 @@ abstract class SqlStorageAdapter(
         const val MINEHUNT_RECORD = "minehunt_record"
 
         @Language("PlainText")
+        const val BINGO_RECORD = "bingo_record"
+
+        @Language("PlainText")
         const val PLAYER_IN_GAME = "player_in_game"
 
         @Language("SQL")
@@ -56,10 +60,19 @@ abstract class SqlStorageAdapter(
         """
 
         @Language("SQL")
+        private const val INSERT_INTO_BINGO_RECORD = """
+            INSERT INTO $BINGO_RECORD (game_id, details)
+            VALUES (?, ?);
+        """
+
+        @Language("SQL")
         private const val DELETE_GAME_RECORD = "DELETE FROM $GAME_RECORD WHERE id = ?;"
 
         @Language("SQL")
         private const val DELETE_MINEHUNT_RECORD = "DELETE FROM $MINEHUNT_RECORD WHERE game_id = ?;"
+
+        @Language("SQL")
+        private const val DELETE_BINGO_RECORD = "DELETE FROM $BINGO_RECORD WHERE game_id = ?;"
 
         @Language("SQL")
         private const val DELETE_PLAYER_RECORDS = "DELETE FROM $PLAYER_IN_GAME WHERE game_id = ?;"
@@ -76,13 +89,16 @@ abstract class SqlStorageAdapter(
                    game.overworld_seed,
                    game.seeds,
                    game.result,
-                   minehunt.game_id AS details_game_id,
+                   minehunt.game_id AS minehunt_details_game_id,
                    minehunt.first_time_to_nether,
                    minehunt.first_time_to_the_end,
                    minehunt.first_player_to_nether,
-                   minehunt.first_player_to_the_end
+                   minehunt.first_player_to_the_end,
+                   bingo.game_id AS bingo_details_game_id,
+                   bingo.details AS bingo_details
             FROM $GAME_RECORD AS game
             LEFT JOIN $MINEHUNT_RECORD AS minehunt ON minehunt.game_id = game.id
+            LEFT JOIN $BINGO_RECORD AS bingo ON bingo.game_id = game.id
             WHERE game.id = ?;
         """
 
@@ -143,6 +159,7 @@ abstract class SqlStorageAdapter(
                 it.autoCommit = false
                 deleteByGameId(it, DELETE_PLAYER_RECORDS, id)
                 deleteByGameId(it, DELETE_MINEHUNT_RECORD, id)
+                deleteByGameId(it, DELETE_BINGO_RECORD, id)
                 val deleted = deleteByGameId(it, DELETE_GAME_RECORD, id) == 1
                 it.commit()
                 deleted
@@ -198,16 +215,25 @@ abstract class SqlStorageAdapter(
     }
 
     private fun insertGameModeDetails(gameDetails: GameDetails, gameId: Int, connection: Connection) {
-        if (gameDetails !is MinehuntRecord) return
-        connection.prepareStatement(INSERT_INTO_MINEHUNT_RECORD).use { statement ->
-            gameDetails.firstTimeToNether?.let { statement.setLong(1, it.toEpochMilli()) }
-                ?: statement.setNull(1, Types.BIGINT)
-            gameDetails.firstTimeToTheEnd?.let { statement.setLong(2, it.toEpochMilli()) }
-                ?: statement.setNull(2, Types.BIGINT)
-            statement.setString(3, gameDetails.firstPlayerToNether?.toString())
-            statement.setString(4, gameDetails.firstPlayerToTheEnd?.toString())
-            statement.setInt(5, gameId)
-            statement.executeUpdate()
+        when (gameDetails) {
+            is MinehuntRecord -> connection.prepareStatement(INSERT_INTO_MINEHUNT_RECORD).use { statement ->
+                gameDetails.firstTimeToNether?.let { statement.setLong(1, it.toEpochMilli()) }
+                    ?: statement.setNull(1, Types.BIGINT)
+                gameDetails.firstTimeToTheEnd?.let { statement.setLong(2, it.toEpochMilli()) }
+                    ?: statement.setNull(2, Types.BIGINT)
+                statement.setString(3, gameDetails.firstPlayerToNether?.toString())
+                statement.setString(4, gameDetails.firstPlayerToTheEnd?.toString())
+                statement.setInt(5, gameId)
+                statement.executeUpdate()
+            }
+
+            is BingoRecord -> connection.prepareStatement(INSERT_INTO_BINGO_RECORD).use { statement ->
+                statement.setInt(1, gameId)
+                statement.setString(2, gson.toJson(gameDetails))
+                statement.executeUpdate()
+            }
+
+            else -> error("Unsupported game details type: ${gameDetails.javaClass.name}")
         }
     }
 
@@ -239,7 +265,7 @@ abstract class SqlStorageAdapter(
         val mode = GameMode.valueOf(result.getString("mode"))
         val details = when (mode) {
             GameMode.MANHUNT -> {
-                check(result.getObject("details_game_id") != null) {
+                check(result.getObject("minehunt_details_game_id") != null) {
                     "Missing Manhunt details for game ${result.getInt("id")}"
                 }
                 MinehuntRecord(
@@ -250,7 +276,12 @@ abstract class SqlStorageAdapter(
                 )
             }
 
-            GameMode.BINGO -> error("Bingo game details are not implemented")
+            GameMode.BINGO -> {
+                check(result.getObject("bingo_details_game_id") != null) {
+                    "Missing Bingo details for game ${result.getInt("id")}"
+                }
+                gson.fromJson(result.getString("bingo_details"), BingoRecord::class.java)
+            }
         }
         val worldSeeds: Map<String, Long> = gson.fromJson(result.getString("seeds"), worldSeedsType)
         val factionResults: List<FactionInfo> = gson.fromJson(result.getString("result"), factionResultsType)

@@ -4,7 +4,7 @@
 
 MinehuntF hosts one game session per server process. The game manager owns the shared lifecycle, while the selected mode owns its roles, rules, win conditions, and in-game events.
 
-The plugin currently registers and selects only [Manhunt](modes/manhunt.md). [Bingo](modes/bingo.md) has an identifier and an integration boundary, but is not playable yet.
+The plugin registers both [Manhunt](modes/manhunt.md) and [Bingo](modes/bingo.md). Manhunt is selected on startup, and an operator may switch modes in the lobby.
 
 ## Flow overview
 
@@ -14,8 +14,8 @@ stateDiagram-v2
     LOBBY --> COUNTDOWN: /minehunt start
     COUNTDOWN --> LOBBY: a participant disconnects
     COUNTDOWN --> RUNNING: five-second countdown finishes
-    RUNNING --> ENDING: win condition or stop vote passes
-    ENDING --> FINISHED: cancel tasks and save the result
+    RUNNING --> SAVING: win condition or stop vote passes
+    SAVING --> FINISHED: cancel tasks and save the result
     FINISHED --> [*]: remake vote passes and stops the server
 ```
 
@@ -24,7 +24,7 @@ stateDiagram-v2
 - On startup, the plugin initializes storage, creates the selected mode, and registers that mode's own event listener.
 - A joining player is placed in Adventure mode and assigned the mode's spectator role by default.
 - Players can select roles and inspect or change the current mode's rules.
-- The current implementation selects Manhunt on startup and does not expose a mode-selection command.
+- The current implementation selects Manhunt on startup; an operator may use `/minehunt mode <mode>` to switch modes.
 - When a mode is switched or closed, the manager unregisters its event listener before releasing the mode's resources.
 - Players may start a remake vote. Its voter list is all players online when the vote starts; it passes at 50% within 30 seconds.
 
@@ -41,15 +41,15 @@ stateDiagram-v2
 - The selected mode initializes roles and takes ownership of in-game events, mode tasks, and win detection.
 - Returning participants recover their original identity; players outside the session join as spectators.
 - The selected mode explicitly owns its scheduled tasks, and the manager asks it to cancel them when the game ends.
-- An initial game record is written at the start, while the mode continues collecting its own data.
+- The mode collects mode-specific data while running and builds one immutable complete record snapshot when it ends.
 - Non-eliminated participants may start a stop vote. Its voter list is fixed when it starts; 80% within 30 seconds ends the game as stopped with no winner.
 
-### 4. Ending (ENDING)
+### 4. Saving (SAVING)
 
-- Reaching a mode win condition or passing the stop vote begins the ending phase.
+- Reaching a mode win condition or passing the stop vote begins the saving phase.
 - The manager stops all per-game tasks and cancels an unfinished stop vote.
 - The selected mode displays its result, restores player state, and builds the final game and player records.
-- The final write waits for the initial record ID, preventing start and end writes from racing each other.
+- The final record is written on a dedicated thread. A failed or timed-out database write falls back to a local file before the session becomes finished.
 
 ### 5. Finished (FINISHED)
 
@@ -64,6 +64,7 @@ The main command is `/minehunt`; `/mh` is its alias.
 | Command | Available phase | Purpose |
 | --- | --- | --- |
 | `/minehunt help` | Any | Show command help. |
+| `/minehunt mode [mode]` | Any to inspect; lobby to switch | Show the current mode; an operator may select a registered mode. |
 | `/minehunt join <role>` | Lobby | Join a role exposed by the selected mode. |
 | `/minehunt leave` | Lobby | Join the selected mode's spectator role. |
 | `/minehunt rule <rule>` | Any | Inspect one rule from the selected mode. |
@@ -77,4 +78,4 @@ The main command is `/minehunt`; `/mh` is its alias.
 ## Mode documentation
 
 - [Manhunt](modes/manhunt.md) — implemented and selected at plugin startup.
-- [Bingo](modes/bingo.md) — not implemented yet.
+- [Bingo](modes/bingo.md) — implemented as a standard red-versus-blue 5×5 item race.
