@@ -1,4 +1,4 @@
-package xyz.fortern.minehunt
+package xyz.fortern.minehunt.game
 
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -9,7 +9,7 @@ import java.util.*
 /**
  * 将纯投票状态与 Bukkit 超时任务组合成一次限时赞成票。
  *
- * 投票名单在 [newVote] 时固定；每位名单内玩家只能投一票，投票无法撤销。
+ * 每位名单内玩家只能投一票，投票无法撤销。
  * 所有公开方法都应在服务器主线程调用。
  */
 class VoteProcess(
@@ -17,7 +17,7 @@ class VoteProcess(
     /**
      * 初始倒计时
      */
-    var time: Long,
+    val time: Long,
 
     /**
      * 比例达到多少来完成投票
@@ -25,19 +25,34 @@ class VoteProcess(
     val rate: Float,
 
     /**
+     * 新抽票流程创建时要执行的操作
+     */
+    private val onStart: (Player) -> Unit,
+
+    /**
      * 投票达成票数时完成时执行的操作
      */
-    private val howtoFinish: () -> Unit,
+    private val onFinish: () -> Unit,
 
     /**
      * 投票计时结束尚未达成票数时的操作
      */
-    private val howtoCancel: () -> Unit,
+    private val onCancel: () -> Unit,
 
     /**
-     * 当一位玩家投票时执行的操作
+     * 当一位玩家投票被接受时的操作
      */
-    private val onVote: () -> Unit
+    private val onVoteAccepted: (Player) -> Unit,
+
+    /**
+     * 当一位玩家投票被拒绝时的操作
+     */
+    private val onVoteRejected: (Player) -> Unit,
+
+    /**
+     * 当玩家重复投票时的操作
+     */
+    private val onVoteDuplicated: (Player) -> Unit,
 ) {
     private val ballot = VoteBallot(rate)
 
@@ -51,47 +66,44 @@ class VoteProcess(
      *
      * @param players 参与此次投票的玩家列表
      */
-    fun newVote(players: List<Player>) {
-        ballot.start(players.map(Player::getUniqueId))
+    private fun newVote(players: Collection<UUID>) {
+        ballot.start(players)
         // Bukkit callbacks may send messages or change game state, so the timeout
         // must run on the server thread as well.
         countdownTask = Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             if (!ballot.running) return@Runnable
             finishRunningVote()
-            howtoCancel()
+            onCancel()
         }, time)
     }
 
     /**
-     * 玩家投下赞成票。
+     * [player] 投下赞成票。
      *
-     * 投票前应先判断投票进程是否开始。
-     * 如未开始则应当先调用 [newVote]。
+     * 投票前会先判断投票进程是否开始。若未开始，使用[stopVoters]固定可投票玩家列表。
      *
      * 如果玩家不在此次投票名单中，则无法投票。
-     *
-     * @throws RuntimeException 投票未开始时调用会抛出异常
      */
-    fun onPlayerVote(player: Player) {
+    fun onPlayerVote(player: Player, stopVoters: Set<UUID>) {
         if (!ballot.running) {
-            throw RuntimeException("投票未开始")
+            if (ballot.canVote(player.uniqueId)) {
+                // 没有投票资格的人，不能发起投票
+                onVoteRejected(player)
+                return
+            }
+            newVote(stopVoters)
+            onStart(player)
         }
         when (ballot.vote(player.uniqueId)) {
-            VoteResult.REJECTED -> Unit
-            VoteResult.ACCEPTED -> onVote()
+            VoteResult.REJECTED -> onVoteRejected(player)
+            VoteResult.DUPLICATED -> onVoteDuplicated(player)
+            VoteResult.ACCEPTED -> onVoteAccepted(player)
             VoteResult.PASSED -> {
-                onVote()
+                onVoteAccepted(player)
                 finishRunningVote()
-                howtoFinish()
+                onFinish()
             }
         }
-    }
-
-    /**
-     * 玩家能否投票
-     */
-    fun canVote(player: Player): Boolean {
-        return ballot.canVote(player.uniqueId)
     }
 
     /**
@@ -138,6 +150,11 @@ internal enum class VoteResult {
     ACCEPTED,
 
     /**
+     * 投票重复
+     */
+    DUPLICATED,
+
+    /**
      * 投票被接受，且该票决定了最终结果
      */
     PASSED,
@@ -177,7 +194,8 @@ internal class VoteBallot(private val requiredRate: Float) {
 
     fun vote(player: UUID): VoteResult {
         check(running) { "投票未开始" }
-        if (player !in eligiblePlayers || !acceptedPlayers.add(player)) return VoteResult.REJECTED
+        if (!canVote(player)) return VoteResult.REJECTED
+        if (!acceptedPlayers.add(player)) return VoteResult.DUPLICATED
         if (votes.toFloat() / players >= requiredRate) {
             running = false
             return VoteResult.PASSED

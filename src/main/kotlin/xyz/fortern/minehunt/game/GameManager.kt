@@ -6,7 +6,6 @@ import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
-import xyz.fortern.minehunt.VoteProcess
 import xyz.fortern.minehunt.record.FinishType
 import java.time.Instant
 import java.util.*
@@ -53,49 +52,89 @@ class GameManager(
     val phase: GamePhase
         get() = state.phase
 
-    private val voteForStop: VoteProcess = VoteProcess(plugin, 30L * 20, 0.8f, {
-        Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage("${ChatColor.GOLD}--------投票完成--------")
+    private val voteForStop: VoteProcess = VoteProcess(
+        plugin, 30L * 20, 0.8f,
+        {
+            Bukkit.getOnlinePlayers().forEach {
+                it.sendMessage(
+                    "${it.name}发起了终止游戏的投票\n" +
+                            "投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}\n" +
+                            "如果赞成请在${voteForStop.time / 20}秒内执行 ${ChatColor.GREEN}/minehunt stop"
+                )
+            }
+        },
+        {
+            Bukkit.getOnlinePlayers().forEach {
+                it.sendMessage("${ChatColor.GOLD}--------投票完成--------")
+            }
+            finish(GameOutcome(null, FinishType.STOPPED))
+        },
+        {
+            onVotesNotEnough()
+        },
+        {
+            Bukkit.getOnlinePlayers().forEach {
+                val votes = voteForStop.pollingNum()
+                val players = voteForStop.playersNum()
+                it.sendMessage("${ChatColor.RED}投票终止游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})")
+            }
+        }, {
+            onVoteRejected(it)
+        }, {
+            onVoteDuplicated(it)
         }
-        finish(GameOutcome(null, FinishType.STOPPED))
-    }, {
-        Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage("投票结束，票数不足")
-        }
-    }, {
-        Bukkit.getOnlinePlayers().forEach {
-            val votes = voteForStop.pollingNum()
-            val players = voteForStop.playersNum()
-            it.sendMessage(
-                "${ChatColor.RED}投票终止游戏 ($votes/$players) " +
-                    "(${String.format("%.2f%%", votes * 100.0 / players)})"
-            )
-        }
-    })
+    )
 
-    private val voteForRemake: VoteProcess = VoteProcess(plugin, 30L * 20, 0.5f, {
-        remakeScheduled = true
-        Bukkit.getOnlinePlayers().forEach {
-            it.sendMessage("--------投票结束，5秒后游戏重开--------")
+    private val voteForRemake: VoteProcess = VoteProcess(
+        plugin, 30L * 20, 0.5f,
+        {
+            Bukkit.getOnlinePlayers().forEach {
+                it.sendMessage(
+                    "${it.name}发起了重开游戏的投票\n" +
+                            "投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100)}\n" +
+                            "如果赞成请在${voteForRemake.time / 20}秒内执行 ${ChatColor.GREEN}/minehunt remake"
+                )
+            }
+        },
+        {
+            remakeScheduled = true
+            Bukkit.getOnlinePlayers().forEach {
+                it.sendMessage("--------投票结束，5秒后游戏重开--------")
+            }
+            remakeTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
+                remakeTask = null
+                Bukkit.shutdown()
+            }, 5 * 20L)
+        },
+        {
+            onVotesNotEnough()
+        },
+        {
+            Bukkit.getOnlinePlayers().forEach {
+                val votes = voteForRemake.pollingNum()
+                val players = voteForRemake.playersNum()
+                it.sendMessage("${ChatColor.RED}投票重开游戏 ($votes/$players) (${String.format("%.2f%%", votes * 100.0 / players)})")
+            }
+        }, {
+            onVoteRejected(it)
+        }, {
+            onVoteDuplicated(it)
         }
-        remakeTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
-            remakeTask = null
-            Bukkit.shutdown()
-        }, 5 * 20L)
-    }, {
+    )
+
+    private fun onVotesNotEnough() {
         Bukkit.getOnlinePlayers().forEach {
             it.sendMessage("--------投票结束，票数不足--------")
         }
-    }, {
-        Bukkit.getOnlinePlayers().forEach {
-            val votes = voteForRemake.pollingNum()
-            val players = voteForRemake.playersNum()
-            it.sendMessage(
-                "${ChatColor.RED}投票重开游戏 ($votes/$players) " +
-                    "(${String.format("%.2f%%", votes * 100.0 / players)})"
-            )
-        }
-    })
+    }
+
+    private fun onVoteRejected(player: Player) {
+        player.sendMessage("${ChatColor.RED}你不在可投票的名单中")
+    }
+
+    private fun onVoteDuplicated(player: Player) {
+        player.sendMessage("${ChatColor.RED}你已经投票")
+    }
 
     /** 注册模式工厂；同一模式标识不能重复注册。 */
     fun registerMode(id: GameModeId, factory: () -> GameMode) {
@@ -275,28 +314,7 @@ class GameManager(
             player.sendMessage("${ChatColor.RED}只有游戏中才能投票")
             return
         }
-        val eligibleVoters = currentMode.stopVoters()
-        if (player.uniqueId !in eligibleVoters) {
-            player.sendMessage("${ChatColor.RED}只有游戏中的玩家才能投票")
-            return
-        }
-        if (!voteForStop.isRunning()) {
-            val voters = eligibleVoters.mapNotNull(Bukkit::getPlayer)
-            Bukkit.getOnlinePlayers().forEach {
-                it.sendMessage(
-                    "${player.name}发起了终止游戏的投票\n" +
-                        "投票需达到的比例: ${String.format("%.2f%%", voteForStop.rate * 100)}\n" +
-                        "如果赞成请在${voteForStop.time / 20}秒内执行 " +
-                        "${ChatColor.GREEN}/minehunt stop"
-                )
-            }
-            voteForStop.newVote(voters)
-        }
-        if (!voteForStop.canVote(player)) {
-            player.sendMessage("${ChatColor.RED}你不在可投票的名单中")
-            return
-        }
-        voteForStop.onPlayerVote(player)
+        voteForStop.onPlayerVote(player, currentMode.stopVoters())
     }
 
     /**
@@ -311,24 +329,7 @@ class GameManager(
             player.sendMessage("正在重开......")
             return
         }
-        if (!voteForRemake.isRunning()) {
-            val voters = Bukkit.getOnlinePlayers().toList()
-            if (voters.isEmpty()) return
-            Bukkit.getOnlinePlayers().forEach {
-                it.sendMessage(
-                    "${player.name}发起了重开游戏的投票\n" +
-                        "投票需达到的比例: ${String.format("%.2f%%", voteForRemake.rate * 100)}\n" +
-                        "如果赞成请在${voteForRemake.time / 20}秒内执行 " +
-                        "${ChatColor.GREEN}/minehunt remake"
-                )
-            }
-            voteForRemake.newVote(voters)
-        }
-        if (!voteForRemake.canVote(player)) {
-            player.sendMessage("${ChatColor.RED}你不在可投票的名单中")
-            return
-        }
-        voteForRemake.onPlayerVote(player)
+        voteForRemake.onPlayerVote(player, currentMode.stopVoters())
     }
 
     override fun close() {

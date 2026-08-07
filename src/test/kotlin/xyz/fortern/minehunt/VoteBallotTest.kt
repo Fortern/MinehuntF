@@ -1,10 +1,10 @@
 package xyz.fortern.minehunt
 
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import java.util.UUID
+import xyz.fortern.minehunt.game.VoteBallot
+import xyz.fortern.minehunt.game.VoteResult
+import java.util.*
 
 class VoteBallotTest {
     @Test
