@@ -48,7 +48,7 @@ import xyz.fortern.minehunt.record.PlayerInGame
 import xyz.fortern.minehunt.rule.RuleKey
 import java.time.Duration
 import java.time.Instant
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ThreadLocalRandom
 import xyz.fortern.minehunt.game.GameMode as RuntimeGameMode
 import xyz.fortern.minehunt.record.GameMode as GameModeId
@@ -300,6 +300,10 @@ class BingoGame(
 
     override fun onRuleChanged(rule: RuleKey<*>) {
         showRulesScoreboard()
+    }
+
+    override fun onDatabaseSaved(gameId: Int) {
+
     }
 
     override fun cancelTasks() {

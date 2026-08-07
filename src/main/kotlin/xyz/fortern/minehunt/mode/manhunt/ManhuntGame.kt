@@ -1,5 +1,7 @@
 package xyz.fortern.minehunt.mode.manhunt
 
+import net.md_5.bungee.api.ChatMessageType
+import net.md_5.bungee.api.chat.TextComponent
 import org.apache.commons.lang3.time.DurationFormatUtils
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -80,6 +82,10 @@ class ManhuntGame(
 
     /** Manhunt 准备阶段的成员和角色状态。 */
     private val lobby = Lobby()
+
+    private lateinit var gameRecord: GameRecord
+    private var gameId: Int? = null
+    private var winner: Faction? = null
 
     override val id = GameModeId.MANHUNT
     override val listener = ManhuntListener()
@@ -534,7 +540,7 @@ class ManhuntGame(
      * 结束处理
      */
     override fun finish(outcome: GameOutcome): CompletedGameRecord {
-        val winner = outcome.winnerRole?.let(Faction::fromRole)
+        winner = outcome.winnerRole?.let(Faction::fromRole)
         val finishType = outcome.finishType
         val startTime = checkNotNull(gameManager.startedAt) { "Game start time is not initialized" }
         val endTime = gameManager.endedAt ?: Instant.now()
@@ -546,7 +552,7 @@ class ManhuntGame(
         Bukkit.getOnlinePlayers().forEach {
             it.sendMessage("${ChatColor.GREEN}--------游戏结束--------")
             if (winner != null) {
-                it.sendMessage("${ChatColor.GOLD}获胜者：${winner.displayName}")
+                it.sendMessage("${ChatColor.GOLD}获胜者：${winner!!.displayName}")
             } else {
                 it.sendMessage("${ChatColor.GOLD}没有赢家")
             }
@@ -578,7 +584,7 @@ class ManhuntGame(
             firstPlayerInTheEnd?.uniqueId,
         )
 
-        val gameRecord = GameRecord(
+        gameRecord = GameRecord(
             0,
             UUID.randomUUID(),
             GameModeId.MANHUNT,
@@ -592,12 +598,12 @@ class ManhuntGame(
             modeDetails,
         )
 
+
         // 计分板显示
-        overScoreboard(gameRecord, winner)
+        overScoreboard()
 
         val resultInfo = buildString {
             appendLine("${ChatColor.GREEN}=====对局信息=====")
-            appendLine("对局ID: 保存中")
             appendLine("开始时间: ${startTime.atZone(ZoneId.systemDefault()).format(formatter)}")
             appendLine("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.seconds * 1000L)}")
             append("胜者: ${winner?.displayName}")
@@ -664,7 +670,7 @@ class ManhuntGame(
                 } else {
                     weaponsTmpMap.forEach { (type, n) -> appendLine("${readableName(type.name)}: $n") }
                     val shootTimes = weaponsTmpMap.getOrDefault(Material.BOW, 0) +
-                        weaponsTmpMap.getOrDefault(Material.CROSSBOW, 0)
+                            weaponsTmpMap.getOrDefault(Material.CROSSBOW, 0)
                     if (shootTimes > 0) {
                         val hitRate = String.format("%.2f%%", arrowHits.getOrDefault(uuid, 0) * 100.0 / shootTimes)
                         appendLine("箭矢命中率: $hitRate")
@@ -747,7 +753,7 @@ class ManhuntGame(
         if (nextTrackRunner.isOnline && !outPlayers.contains(nextTrackRunner.uniqueId)) {
             refreshCompassTrack(hunter, nextTrackRunner.player!!)
         }
-        hunter.sendMessage("指向 ${nextTrackRunner.name}")
+        hunter.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent("指向 ${nextTrackRunner.name}"))
     }
 
     /**
@@ -796,7 +802,7 @@ class ManhuntGame(
                 finishTask?.cancel()
                 finishTask = plugin.server.scheduler.runTask(plugin, Runnable {
                     finishTask = null
-                    gameManager.finish(GameOutcome(ROLE_HUNTER, FinishType.FINISHED))
+                    gameManager.finish(GameOutcome(if (hunterSet.isEmpty()) null else ROLE_HUNTER, FinishType.FINISHED))
                 })
             }
         } else if (faction == Faction.HUNTER) {
@@ -845,13 +851,18 @@ class ManhuntGame(
      */
     override fun onRuleChanged(rule: RuleKey<*>) = refreshEntry(rule)
 
+    override fun onDatabaseSaved(gameId: Int) {
+        this.gameId = gameId
+        overScoreboard()
+    }
+
     private fun refreshEntry(ruleKey: RuleKey<*>) {
 //        val teamForOneRule = scoreboard.getTeam(ruleKey.name) ?: return
         val teamForOneRule = scoreboard.getTeam("${ChatColor.GOLD}${ruleKey.displayName}") ?: return
         teamForOneRule.suffix = ": ${ChatColor.GREEN}${gameRules.getRuleValue(ruleKey)}"
     }
 
-    private fun overScoreboard(gameRecord: GameRecord, winner: Faction?) {
+    private fun overScoreboard() {
         scoreboard.teams.forEach { it.unregister() }
         scoreboard.getObjective(GAME_RESULT)?.unregister()
         val objective = scoreboard.registerNewObjective(
@@ -860,7 +871,7 @@ class ManhuntGame(
             "${ChatColor.DARK_AQUA}猎人模式 Game Over"
         )
         objective.getScore("${ChatColor.YELLOW}====基本信息====").score = 15
-        objective.getScore("对局ID: 保存中").score = 14
+        objective.getScore("对局ID：${gameId ?: "保存中"}").score = 14
         objective.getScore("开始时间: ${gameRecord.startTime.atZone(ZoneId.systemDefault()).format(formatter)}").score = 13
         objective.getScore("持续时长: ${DurationFormatUtils.formatDurationHMS(gameRecord.duration.toSeconds() * 1000L)}").score = 12
         objective.getScore("胜者: ${winner?.displayName}").score = 11
@@ -871,8 +882,12 @@ class ManhuntGame(
         objective.getScore("阶段一•主世界：${DurationFormatUtils.formatDurationHMS(duration1.toSeconds() * 1000L)}").score = 9
         objective.getScore("首个进入下界的玩家：${firstPlayerInNether?.name}").score = 8
         val time2 = specificData.firstTimeToTheEnd
-        val duration2 =
-            if (time1 == null) Duration.ZERO else if (time2 != null) Duration.between(time1, time2) else Duration.between(time1, gameRecord.endTime)
+        val duration2 = if (time1 == null)
+            Duration.ZERO
+        else if (time2 != null)
+            Duration.between(time1, time2)
+        else
+            Duration.between(time1, gameRecord.endTime)
         objective.getScore("阶段二•下界：${DurationFormatUtils.formatDurationHMS(duration2.seconds * 1000L)}").score = 7
         objective.getScore("首个进入末地的玩家：${firstPlayerInTheEnd?.name}").score = 6
         val duration3 = if (time2 == null) Duration.ZERO else Duration.between(time2, gameRecord.endTime)

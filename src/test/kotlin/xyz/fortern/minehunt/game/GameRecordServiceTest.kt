@@ -1,8 +1,6 @@
 package xyz.fortern.minehunt.game
 
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import xyz.fortern.minehunt.mode.manhunt.record.MinehuntRecord
 import xyz.fortern.minehunt.record.FinishType
@@ -11,12 +9,12 @@ import xyz.fortern.minehunt.record.GameRecord
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.UUID
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -38,7 +36,7 @@ class GameRecordServiceTest {
 
         val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
 
-        assertEquals(GameRecordSaveResult.DATABASE, result)
+        assertEquals(GameRecordSaveResult.DATABASE, result.first)
         assertEquals(1, databaseCalls.get())
         assertFalse(localCalled.get())
     }
@@ -57,7 +55,7 @@ class GameRecordServiceTest {
 
         val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
 
-        assertEquals(GameRecordSaveResult.LOCAL_FILE, result)
+        assertEquals(GameRecordSaveResult.LOCAL_FILE, result.first)
         assertEquals(fallbackFile, savedFile)
     }
 
@@ -85,7 +83,7 @@ class GameRecordServiceTest {
 
             val result = future.get(2, TimeUnit.SECONDS)
 
-            assertEquals(GameRecordSaveResult.LOCAL_FILE, result)
+            assertEquals(GameRecordSaveResult.LOCAL_FILE, result.first)
             assertTrue(fallbackCalled.get())
         } finally {
             releaseDatabase.countDown()
@@ -102,7 +100,7 @@ class GameRecordServiceTest {
 
         val result = service.use { it.save(completedRecord()).get(2, TimeUnit.SECONDS) }
 
-        assertEquals(GameRecordSaveResult.FAILED, result)
+        assertEquals(GameRecordSaveResult.FAILED, result.first)
     }
 
     private fun service(

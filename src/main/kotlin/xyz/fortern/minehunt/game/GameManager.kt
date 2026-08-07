@@ -259,7 +259,7 @@ class GameManager(
                         result
                     } else {
                         plugin.logger.log(Level.SEVERE, "等待对局记录保存时发生未预期错误", error)
-                        GameRecordSaveResult.FAILED
+                        GameRecordSaveResult.FAILED to 0
                     }
                     finishSaving(finalResult)
                 },
@@ -267,22 +267,25 @@ class GameManager(
             )
         } catch (error: Throwable) {
             plugin.logger.log(Level.SEVERE, "启动对局记录保存任务失败", error)
-            finishSaving(GameRecordSaveResult.FAILED)
+            finishSaving(GameRecordSaveResult.FAILED to 0)
         }
     }
 
     /** 保存成功、失败或超时回退结束后，都强制收敛到终止阶段。 */
-    private fun finishSaving(result: GameRecordSaveResult) {
+    private fun finishSaving(result: Pair<GameRecordSaveResult, Int>) {
         if (phase != GamePhase.SAVING) return
 
         state.transitionTo(GamePhase.FINISHED)
-        val message = when (result) {
+        val message = when (result.first) {
             GameRecordSaveResult.DATABASE -> "${ChatColor.GREEN}游戏记录已保存至数据库"
             GameRecordSaveResult.LOCAL_FILE -> "${ChatColor.GREEN}游戏记录已保存至文件"
             GameRecordSaveResult.FAILED -> "${ChatColor.RED}游戏记录保存失败"
         }
         Bukkit.getOnlinePlayers().forEach {
             it.sendMessage(message)
+        }
+        if (result.first == GameRecordSaveResult.DATABASE) {
+            currentMode.onDatabaseSaved(result.second)
         }
     }
 

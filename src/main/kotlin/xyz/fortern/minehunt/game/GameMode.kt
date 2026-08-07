@@ -2,9 +2,9 @@ package xyz.fortern.minehunt.game
 
 import org.bukkit.entity.Player
 import org.bukkit.event.Listener
-import xyz.fortern.minehunt.record.GameMode as GameModeId
 import xyz.fortern.minehunt.rule.RuleSet
-import java.util.UUID
+import java.util.*
+import xyz.fortern.minehunt.record.GameMode as GameModeId
 
 /**
  * 可选择游戏模式的运行时契约。
@@ -78,7 +78,12 @@ interface GameMode : AutoCloseable {
     fun giveSpecialItem(player: Player, item: String): Boolean
 
     /** 规则修改后同步计分板等模式展示。 */
-    fun onRuleChanged(rule: xyz.fortern.minehunt.rule.RuleKey<*>) = Unit
+    fun onRuleChanged(rule: xyz.fortern.minehunt.rule.RuleKey<*>)
+
+    /**
+     * 游戏保存后的操作
+     */
+    fun onDatabaseSaved(gameId: Int)
 
     /** 释放模式实例持有的、作用域不属于单局会话的资源。 */
     override fun close() = Unit

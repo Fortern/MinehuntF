@@ -64,18 +64,18 @@ class GameRecordService internal constructor(
      * 返回的 future 总会正常完成，并说明记录最终保存到了哪里；
      * 生命周期无论保存结果如何都能离开 SAVING 阶段。
      */
-    fun save(record: CompletedGameRecord): CompletableFuture<GameRecordSaveResult> {
+    fun save(record: CompletedGameRecord): CompletableFuture<Pair<GameRecordSaveResult, Int>> {
         val databaseTask: CompletableFuture<Int>
         synchronized(this) {
             if (closed) {
                 return CompletableFuture.completedFuture(
-                    saveLocally(record, CancellationException("Game record service is closed"))
+                    saveLocally(record, CancellationException("Game record service is closed")) to 0
                 )
             }
             databaseTask = try {
                 CompletableFuture.supplyAsync({ databaseSave(record) }, executor)
             } catch (error: Throwable) {
-                return CompletableFuture.completedFuture(saveLocally(record, error))
+                return CompletableFuture.completedFuture(saveLocally(record, error) to 0)
             }
             databaseTasks.add(databaseTask)
         }
@@ -85,9 +85,9 @@ class GameRecordService internal constructor(
             .handle { databaseId, error ->
                 try {
                     if (error == null && databaseId != null && databaseId > 0)
-                        GameRecordSaveResult.DATABASE
+                        GameRecordSaveResult.DATABASE to databaseId
                     else
-                        saveLocally(record, unwrap(error) ?: IllegalStateException("Database insert returned no generated ID"))
+                        saveLocally(record, unwrap(error) ?: IllegalStateException("Database insert returned no generated ID")) to 0
                 } finally {
                     databaseTasks.remove(databaseTask)
                 }
